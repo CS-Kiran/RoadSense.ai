@@ -114,6 +114,17 @@
   --sidebar-ring: oklch(0.551 0.027 264.364);
 }
 
+/* Custom marker icons - prevent conflicts */
+.custom-severity-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.leaflet-div-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
