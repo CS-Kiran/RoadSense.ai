@@ -251,7 +251,7 @@ export default function OfficialRegister() {
                   <Input
                     id="fullName"
                     type="text"
-                    placeholder="John Doe"
+                    placeholder="Kiran Patil"
                     className={`pl-10 h-11 ${errors.fullName ? 'border-destructive focus-visible:ring-destructive' : ''}`}
                     value={formData.fullName}
                     onChange={(e) => handleInputChange('fullName', e.target.value)}

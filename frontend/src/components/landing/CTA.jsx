@@ -16,7 +16,7 @@ export default function CTA() {
             infrastructure
           </p>
           <div className="flex flex-col gap-4 sm:flex-row sm:justify-center">
-            <Link to="/register/user">
+            <Link to="/register/citizen">
               <Button size="lg" variant="secondary" className="group">
                 <ArrowLeft className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
                 Get Started as Citizen

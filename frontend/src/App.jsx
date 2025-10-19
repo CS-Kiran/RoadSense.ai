@@ -1,24 +1,31 @@
-import { Routes, Route } from 'react-router-dom'
-import Landing from './pages/Landing'
-import About from './pages/About'
-import Contact from './pages/Contact'
-import PublicMap from './pages/PublicMap'
-import LoginPage from './components/auth/Login'
-import UserRegister from './components/auth/UserRegister'
-import OfficialRegister from './components/auth/OfficialRegister'
+import { Routes, Route } from 'react-router-dom';
+import { routes } from './routes';
+import NotFound from './pages/NotFound';
 
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<Landing />} />
-      <Route path="/about" element={<About />} />
-      <Route path="/contact" element={<Contact />} />
-      <Route path='/map' element={<PublicMap />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register/user" element={<UserRegister />} />
-      <Route path="/register/official" element={<OfficialRegister />} />
+      {routes.map((route) => {
+        if (route.children) {
+          return (
+            <Route key={route.path} path={route.path}>
+              {route.children.map((child) => (
+                <Route 
+                  key={`${route.path}/${child.path}`} 
+                  path={child.path} 
+                  element={child.element} 
+                />
+              ))}
+            </Route>
+          );
+        }
+        return <Route key={route.path} path={route.path} element={route.element} />;
+      })}
+      
+      {/* 404 Catch-all route */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
-  )
+  );
 }
 
-export default App
+export default App;
