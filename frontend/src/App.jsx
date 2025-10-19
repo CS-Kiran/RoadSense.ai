@@ -1,12 +1,14 @@
-import './App.css'
+import { Routes, Route } from 'react-router-dom'
+import Landing from './pages/Landing'
+import About from './pages/About'
+
 
 function App() {
   return (
-    <>
-      <div className="text-3xl font-bold">
-        <h1>Welcome to RoadSense.ai</h1>
-      </div>   
-    </>
+    <Routes>
+      <Route path="/" element={<Landing />} />
+      <Route path="/about" element={<About />} />
+    </Routes>
   )
 }
 
