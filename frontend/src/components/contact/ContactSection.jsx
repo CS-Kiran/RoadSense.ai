@@ -161,7 +161,7 @@ export default function ContactSection() {
                     id="name"
                     name="name"
                     type="text"
-                    placeholder="John Doe"
+                    placeholder="Kiran Patil"
                     value={formData.name}
                     onChange={handleChange}
                     required
@@ -181,7 +181,7 @@ export default function ContactSection() {
                     id="email"
                     name="email"
                     type="email"
-                    placeholder="john@example.com"
+                    placeholder="kiran@example.com"
                     value={formData.email}
                     onChange={handleChange}
                     required

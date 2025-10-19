@@ -68,7 +68,7 @@ export default function Navbar() {
           <Link to="/login">
             <Button variant="ghost">Login</Button>
           </Link>
-          <Link to="/register">
+          <Link to="/register/user">
             <Button>Register</Button>
           </Link>
         </div>
@@ -130,7 +130,7 @@ export default function Navbar() {
                   Login
                 </Button>
               </Link>
-              <Link to="/register" onClick={() => setMobileMenuOpen(false)}>
+              <Link to="/register/user" onClick={() => setMobileMenuOpen(false)}>
                 <Button className="w-full">Register</Button>
               </Link>
             </div>

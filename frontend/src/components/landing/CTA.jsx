@@ -1,7 +1,7 @@
-import { Button } from '@/components/ui/button'
-import { ArrowLeft } from 'lucide-react'
-import { ArrowRight } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export default function CTA() {
   return (
@@ -12,20 +12,25 @@ export default function CTA() {
             Ready to Make a Difference?
           </h2>
           <p className="mb-8 text-lg text-white/90 sm:text-xl">
-            Join thousands of citizens working together to improve road infrastructure
+            Join thousands of citizens working together to improve road
+            infrastructure
           </p>
           <div className="flex flex-col gap-4 sm:flex-row sm:justify-center">
-            <Button size="lg" variant="secondary" className="group">
-              <ArrowLeft className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-              Get Started as Citizen
-            </Button>
-            <Button size="lg" variant="secondary" className="group">
-              Government Login
-              <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-            </Button>
+            <Link to="/register/user">
+              <Button size="lg" variant="secondary" className="group">
+                <ArrowLeft className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                Get Started as Citizen
+              </Button>
+            </Link>
+            <Link to="/register/official">
+              <Button size="lg" variant="secondary" className="group">
+                Register as Government Official
+                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </Button>
+            </Link>
           </div>
         </div>
       </div>
     </section>
-  )
+  );
 }

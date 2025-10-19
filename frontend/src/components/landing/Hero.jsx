@@ -1,3 +1,4 @@
+import React from 'react';
 import { Button } from "@/components/ui/button";
 import { ArrowRight, MapPin } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -32,7 +33,7 @@ export default function Hero() {
           </p>
 
           <div className="flex flex-col gap-4 sm:flex-row sm:justify-center">
-            <Link to="/register">
+            <Link to="/register/user">
               <Button size="lg" className="group w-full sm:w-auto">
                 Report an Issue
                 <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
