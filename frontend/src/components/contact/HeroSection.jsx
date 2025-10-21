@@ -1,28 +1,46 @@
-import { motion } from 'framer-motion'
-import { Badge } from '@/components/ui/badge'
+// src/components/contact/HeroSection.jsx
+import { motion } from 'framer-motion';
+import { Badge } from '@/components/ui/badge';
+import { MessageSquare } from 'lucide-react';
 
 export default function HeroSection() {
   return (
-    <section className="relative overflow-hidden bg-gradient-to-b from-blue-50 to-white py-20 sm:py-24">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="mx-auto max-w-2xl text-center"
-        >
-          <Badge variant="outline" className="mb-4">
-            Get in Touch
-          </Badge>
-          <h1 className="mb-6 text-4xl font-bold tracking-tight sm:text-5xl">
-            We're Here to Help
-          </h1>
-          <p className="text-lg text-muted-foreground">
-            Have questions about RoadSense.ai? Need support with reporting? Want to partner with us? 
-            We'd love to hear from you.
-          </p>
-        </motion.div>
+    <section className="relative pt-32 pb-20 overflow-hidden bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900">
+      {/* Subtle Background Pattern */}
+      <div className="absolute inset-0 bg-grid-white/[0.02] bg-[size:60px_60px]"></div>
+      <div className="absolute inset-0 overflow-hidden opacity-30">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-400 rounded-full mix-blend-overlay filter blur-3xl animate-blob"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-400 rounded-full mix-blend-overlay filter blur-3xl animate-blob animation-delay-2000"></div>
+      </div>
+
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+        <div className="max-w-4xl mx-auto text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+          >
+            {/* Badge */}
+            <Badge className="mb-6 bg-white/10 backdrop-blur-sm text-white border-white/20 px-4 py-2 text-sm">
+              <MessageSquare size={14} className="mr-2 inline" />
+              Get in Touch
+            </Badge>
+
+            {/* Heading */}
+            <h1 className="text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight">
+              We're Here to
+              <span className="block mt-2 bg-gradient-to-r from-yellow-300 via-pink-300 to-purple-300 bg-clip-text text-transparent">
+                Help You
+              </span>
+            </h1>
+
+            {/* Description */}
+            <p className="text-xl text-white/90 max-w-3xl mx-auto leading-relaxed">
+              Have questions about RoadSense.ai? Need support with reporting? Want to partner with us? We'd love to hear from you.
+            </p>
+          </motion.div>
+        </div>
       </div>
     </section>
-  )
+  );
 }

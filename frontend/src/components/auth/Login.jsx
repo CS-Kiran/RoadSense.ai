@@ -19,11 +19,14 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { login } = useAuth();
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setError("");
+    setLoading(true);
 
     try {
       const response = await fetch("http://localhost:8000/api/login", {
@@ -37,20 +40,33 @@ export default function LoginPage() {
       const data = await response.json();
 
       if (response.ok) {
-        // Use AuthContext login
         login(data.access_token);
 
         localStorage.setItem("user_role", data.role);
 
-        // Fetch user info
-        fetchUserInfo(data.access_token);
+        await fetchUserInfo(data.access_token);
 
-        navigate("/dashboard");
+        switch (data.role) {
+          case "citizen":
+            navigate("/citizen/dashboard");
+            break;
+          case "official":
+            navigate("/official/dashboard");
+            break;
+          case "admin":
+            navigate("/admin/dashboard");
+            break;
+          default:
+            navigate("/dashboard");
+        }
       } else {
-        setError(data.detail || "Login failed");
+        setError(data.detail || "Login failed. Please check your credentials.");
       }
     } catch (error) {
-      setError("Unable to connect to server");
+      console.error("Login error:", error);
+      setError("Unable to connect to server. Please try again later.");
+    } finally {
+      setLoading(false);
     }
   };
 

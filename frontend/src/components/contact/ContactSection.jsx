@@ -1,10 +1,13 @@
+// src/components/contact/ContactSection.jsx
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Mail, Phone, MapPin, MessageSquare, Clock, Send } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Mail, Phone, MapPin, Clock, Send, CheckCircle, HelpCircle } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export default function ContactSection() {
   const [formData, setFormData] = useState({
@@ -19,14 +22,11 @@ export default function ContactSection() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-
     // Simulate form submission
     await new Promise((resolve) => setTimeout(resolve, 1500));
-
     setIsSubmitting(false);
     setSubmitSuccess(true);
     setFormData({ name: "", email: "", subject: "", message: "" });
-
     // Reset success message after 3 seconds
     setTimeout(() => setSubmitSuccess(false), 3000);
   };
@@ -39,223 +39,266 @@ export default function ContactSection() {
     {
       icon: Mail,
       title: "Email Us",
-      details: "support@roadsense.ai",
+      details: "support@RoadSense.ai",
       subtext: "Response within 24 hours",
-      color: "bg-blue-50 text-blue-600",
+      gradient: "from-blue-500 to-blue-600",
+      iconBg: "bg-blue-100",
+      iconColor: "text-blue-600",
     },
     {
       icon: Phone,
       title: "Call Us",
       details: "+91 20 1234 5678",
       subtext: "Mon-Fri, 9AM-6PM IST",
-      color: "bg-green-50 text-green-600",
+      gradient: "from-green-500 to-green-600",
+      iconBg: "bg-green-100",
+      iconColor: "text-green-600",
     },
     {
       icon: MapPin,
       title: "Visit Us",
       details: "Pune, Maharashtra",
       subtext: "India 411001",
-      color: "bg-purple-50 text-purple-600",
+      gradient: "from-purple-500 to-purple-600",
+      iconBg: "bg-purple-100",
+      iconColor: "text-purple-600",
     },
     {
       icon: Clock,
       title: "Business Hours",
       details: "9:00 AM - 6:00 PM",
       subtext: "Monday to Friday",
-      color: "bg-orange-50 text-orange-600",
+      gradient: "from-orange-500 to-orange-600",
+      iconBg: "bg-orange-100",
+      iconColor: "text-orange-600",
     },
   ];
 
   return (
-    <section className="py-20 sm:py-24">
+    <section className="py-20 bg-white">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid gap-12 lg:grid-cols-2">
-          {/* Contact Information Cards */}
-          <div className="space-y-8">
-            <div>
-              <h2 className="mb-4 text-3xl font-bold">Contact Information</h2>
-              <p className="text-muted-foreground">
-                Choose the best way to reach us. We're available through
-                multiple channels to assist you.
-              </p>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              {contactInfo.map((info, index) => (
-                <motion.div
-                  key={info.title}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: index * 0.1 }}
-                  viewport={{ once: true }}
-                >
-                  <Card className="h-full p-6 transition-all hover:shadow-lg hover:-translate-y-1">
-                    <div
-                      className={`mb-4 inline-flex h-12 w-12 items-center justify-center rounded-lg ${info.color}`}
-                    >
-                      <info.icon className="h-6 w-6" />
-                    </div>
-                    <h3 className="mb-2 font-semibold">{info.title}</h3>
-                    <p className="mb-1 text-sm font-medium text-foreground">
-                      {info.details}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {info.subtext}
-                    </p>
-                  </Card>
-                </motion.div>
-              ))}
-            </div>
-
-            {/* Quick Help Section */}
-            <Card className="border-primary/20 bg-primary/5 p-6">
-              <div className="flex items-start gap-4">
-                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary/10">
-                  <MessageSquare className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <h3 className="mb-2 font-semibold">Need Quick Help?</h3>
-                  <p className="mb-3 text-sm text-muted-foreground">
-                    Check our FAQ section for instant answers to common
-                    questions about reporting issues, tracking status, and
-                    account management.
-                  </p>
-                  <Button variant="outline" size="sm">
-                    Visit FAQ
-                  </Button>
-                </div>
-              </div>
-            </Card>
+        {/* Contact Information Cards */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="mb-16"
+        >
+          <div className="text-center mb-12">
+            <Badge className="mb-4 bg-blue-100 text-blue-600 border-blue-200 px-4 py-2">
+              Contact Information
+            </Badge>
+            <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-4">
+              Choose Your Preferred Channel
+            </h2>
+            <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+              We're available through multiple channels to assist you
+            </p>
           </div>
 
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {contactInfo.map((info, index) => {
+              const Icon = info.icon;
+              return (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: index * 0.1 }}
+                >
+                  <Card className="p-6 h-full border-0 shadow-lg hover:shadow-xl transition-all duration-300 group">
+                    {/* Icon */}
+                    <div className={`${info.iconBg} w-14 h-14 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-md`}>
+                      <Icon className={info.iconColor} size={24} />
+                    </div>
+
+                    {/* Title */}
+                    <h3 className="text-lg font-bold text-gray-900 mb-2">
+                      {info.title}
+                    </h3>
+
+                    {/* Details */}
+                    <p className="text-gray-900 font-semibold mb-1">
+                      {info.details}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {info.subtext}
+                    </p>
+
+                    {/* Bottom Accent */}
+                    <div className={`mt-4 h-1 bg-gradient-to-r ${info.gradient} rounded-full transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left`}></div>
+                  </Card>
+                </motion.div>
+              );
+            })}
+          </div>
+        </motion.div>
+
+        <div className="grid lg:grid-cols-4 gap-8">
           {/* Contact Form */}
           <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.8 }}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
+            className="lg:col-span-2"
           >
-            <Card className="p-8 shadow-lg">
-              <h2 className="mb-6 text-2xl font-bold">Send Us a Message</h2>
+            <Card className="p-8 border-0 shadow-xl">
+              <h2 className="text-3xl font-bold text-gray-900 mb-2">
+                Send Us a Message
+              </h2>
+              <p className="text-gray-600 mb-6">
+                Fill out the form below and we'll get back to you as soon as possible
+              </p>
 
+              {/* Success Message */}
               {submitSuccess && (
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-800"
+                  className="mb-6 p-4 bg-green-50 border-2 border-green-200 rounded-xl flex items-center gap-3"
                 >
-                  ✓ Message sent successfully! We'll get back to you soon.
+                  <CheckCircle className="text-green-600" size={20} />
+                  <span className="text-green-700 font-medium">
+                    Message sent successfully! We'll get back to you soon.
+                  </span>
                 </motion.div>
               )}
 
               <form onSubmit={handleSubmit} className="space-y-6">
                 {/* Name Field */}
                 <div>
-                  <label
-                    htmlFor="name"
-                    className="mb-2 block text-sm font-medium"
-                  >
-                    Full Name <span className="text-red-500">*</span>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Full Name *
                   </label>
                   <Input
-                    id="name"
                     name="name"
-                    type="text"
-                    placeholder="Kiran Patil"
                     value={formData.name}
                     onChange={handleChange}
+                    placeholder="John Doe"
                     required
-                    className="h-11"
+                    className="border-gray-300 focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
                 {/* Email Field */}
                 <div>
-                  <label
-                    htmlFor="email"
-                    className="mb-2 block text-sm font-medium"
-                  >
-                    Email Address <span className="text-red-500">*</span>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Email Address *
                   </label>
                   <Input
-                    id="email"
-                    name="email"
                     type="email"
-                    placeholder="kiran@example.com"
+                    name="email"
                     value={formData.email}
                     onChange={handleChange}
+                    placeholder="john@example.com"
                     required
-                    className="h-11"
+                    className="border-gray-300 focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
                 {/* Subject Field */}
                 <div>
-                  <label
-                    htmlFor="subject"
-                    className="mb-2 block text-sm font-medium"
-                  >
-                    Subject <span className="text-red-500">*</span>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Subject *
                   </label>
                   <Input
-                    id="subject"
                     name="subject"
-                    type="text"
-                    placeholder="How can we help you?"
                     value={formData.subject}
                     onChange={handleChange}
+                    placeholder="How can we help you?"
                     required
-                    className="h-11"
+                    className="border-gray-300 focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
                 {/* Message Field */}
                 <div>
-                  <label
-                    htmlFor="message"
-                    className="mb-2 block text-sm font-medium"
-                  >
-                    Message <span className="text-red-500">*</span>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Message *
                   </label>
                   <Textarea
-                    id="message"
                     name="message"
-                    placeholder="Tell us more about your inquiry..."
                     value={formData.message}
                     onChange={handleChange}
+                    placeholder="Tell us more about your inquiry..."
+                    rows={6}
                     required
-                    rows={5}
-                    className="resize-none"
+                    minLength={10}
+                    className="border-gray-300 focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Minimum 10 characters
-                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Minimum 10 characters</p>
                 </div>
 
                 {/* Submit Button */}
                 <Button
                   type="submit"
-                  size="lg"
-                  className="w-full"
                   disabled={isSubmitting}
+                  className="w-full bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 font-semibold py-6 text-base"
                 >
                   {isSubmitting ? (
                     <>
-                      <span className="mr-2">Sending...</span>
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                      Sending...
                     </>
                   ) : (
                     <>
-                      <Send className="mr-2 h-4 w-4" />
+                      <Send size={18} className="mr-2" />
                       Send Message
                     </>
                   )}
                 </Button>
 
-                <p className="text-center text-xs text-muted-foreground">
+                <p className="text-sm text-gray-500 text-center">
                   We typically respond within 24 hours during business days
                 </p>
               </form>
+            </Card>
+          </motion.div>
+
+          {/* Quick Help Section */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.2 }}
+            className="space-y-6"
+          >
+            {/* FAQ Card */}
+            <Card className="p-8 border-0 shadow-lg bg-gradient-to-br from-blue-50 to-indigo-50">
+              <div className="bg-gradient-to-br from-blue-500 to-indigo-600 w-14 h-14 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
+                <HelpCircle className="text-white" size={24} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-3">
+                Need Quick Help?
+              </h3>
+              <p className="text-gray-700 mb-6 leading-relaxed">
+                Check our FAQ section for instant answers to common questions about reporting issues, tracking status, and account management.
+              </p>
+              <Link to="/help">
+                <Button variant="outline" className="w-full border-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white font-semibold">
+                  Visit FAQ
+                </Button>
+              </Link>
+            </Card>
+
+            {/* Response Time Card */}
+            <Card className="p-6 border-0 shadow-lg">
+              <h4 className="font-bold text-gray-900 mb-4">Average Response Times</h4>
+              <div className="space-y-3">
+                {[
+                  { label: 'Email', time: '24 hours' },
+                  { label: 'Phone', time: 'Immediate' },
+                  { label: 'Contact Form', time: '1-2 days' },
+                ].map((item, index) => (
+                  <div key={index} className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0">
+                    <span className="text-gray-700">{item.label}</span>
+                    <Badge variant="outline" className="font-semibold">
+                      {item.time}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
             </Card>
           </motion.div>
         </div>

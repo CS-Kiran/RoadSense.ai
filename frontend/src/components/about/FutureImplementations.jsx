@@ -1,7 +1,8 @@
-import { Badge } from '@/components/ui/badge'
-import { Card } from '@/components/ui/card'
-import { motion } from 'framer-motion'
-import { Bot, Smartphone, Globe, Bell, Rocket, TrendingUp } from 'lucide-react'
+// src/components/about/FutureImplementations.jsx
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+import { motion } from 'framer-motion';
+import { Bot, Smartphone, Globe, Bell, Rocket, TrendingUp } from 'lucide-react';
 
 export default function FutureImplementations() {
   const futureFeatures = [
@@ -11,6 +12,7 @@ export default function FutureImplementations() {
       description: 'Automatic pothole detection and severity classification using computer vision models.',
       timeline: 'Q2 2026',
       status: 'In Development',
+      statusColor: 'bg-blue-100 text-blue-700 border-blue-200',
     },
     {
       icon: Smartphone,
@@ -18,6 +20,7 @@ export default function FutureImplementations() {
       description: 'Dedicated iOS and Android applications with offline reporting capabilities.',
       timeline: 'Q3 2026',
       status: 'Planned',
+      statusColor: 'bg-gray-100 text-gray-700 border-gray-200',
     },
     {
       icon: Globe,
@@ -25,6 +28,7 @@ export default function FutureImplementations() {
       description: 'Platform localization for regional languages to improve accessibility across diverse communities.',
       timeline: 'Q4 2026',
       status: 'Planned',
+      statusColor: 'bg-gray-100 text-gray-700 border-gray-200',
     },
     {
       icon: Bell,
@@ -32,6 +36,7 @@ export default function FutureImplementations() {
       description: 'Intelligent alert system with customizable notification preferences and escalation rules.',
       timeline: 'Q1 2026',
       status: 'Planned',
+      statusColor: 'bg-gray-100 text-gray-700 border-gray-200',
     },
     {
       icon: Rocket,
@@ -39,6 +44,7 @@ export default function FutureImplementations() {
       description: 'Public API for third-party integrations with municipal management systems.',
       timeline: 'Q2 2026',
       status: 'Planned',
+      statusColor: 'bg-gray-100 text-gray-700 border-gray-200',
     },
     {
       icon: TrendingUp,
@@ -46,53 +52,74 @@ export default function FutureImplementations() {
       description: 'Enhanced visualization tools with custom report generation and export capabilities.',
       timeline: 'Q3 2026',
       status: 'In Progress',
+      statusColor: 'bg-green-100 text-green-700 border-green-200',
     },
-  ]
+  ];
 
   return (
-    <section className="bg-gradient-to-b from-slate-50 to-white py-20 sm:py-24">
+    <section className="py-20 bg-gradient-to-br from-gray-50 to-purple-50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="mb-16 text-center">
-          <Badge variant="outline" className="mb-4">
+        {/* Section Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-16"
+        >
+          <Badge className="mb-4 bg-indigo-100 text-indigo-600 border-indigo-200 px-4 py-2">
             Roadmap
           </Badge>
-          <h2 className="mb-4 text-3xl font-bold sm:text-4xl">
+          <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-4">
             Future Implementations
           </h2>
-          <p className="mx-auto max-w-2xl text-lg text-muted-foreground">
+          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
             Continuous innovation to enhance functionality, accessibility, and impact
           </p>
-        </div>
+        </motion.div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {futureFeatures.map((feature, index) => (
-            <motion.div
-              key={feature.title}
-              initial={{ opacity: 0, x: -20 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
-              viewport={{ once: true }}
-            >
-              <Card className="group relative h-full overflow-hidden p-6 transition-all hover:shadow-lg">
-                <div className="absolute right-0 top-0 rounded-bl-lg bg-primary/10 px-3 py-1">
-                  <span className="text-xs font-medium text-primary">{feature.timeline}</span>
-                </div>
-                
-                <feature.icon className="mb-4 h-10 w-10 text-primary" />
-                <h3 className="mb-2 text-lg font-bold">{feature.title}</h3>
-                <p className="mb-4 text-sm text-muted-foreground">{feature.description}</p>
-                
-                <Badge 
-                  variant={feature.status === 'In Development' ? 'default' : 'secondary'}
-                  className="text-xs"
-                >
-                  {feature.status}
-                </Badge>
-              </Card>
-            </motion.div>
-          ))}
+        {/* Features Grid */}
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {futureFeatures.map((feature, index) => {
+            const Icon = feature.icon;
+            return (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: index * 0.1 }}
+              >
+                <Card className="p-8 h-full border-0 shadow-lg hover:shadow-xl transition-all duration-300 group bg-white">
+                  {/* Timeline Badge */}
+                  <div className="flex items-center justify-between mb-4">
+                    <Badge variant="outline" className="text-xs font-semibold">
+                      {feature.timeline}
+                    </Badge>
+                    <Badge className={`text-xs border ${feature.statusColor}`}>
+                      {feature.status}
+                    </Badge>
+                  </div>
+
+                  {/* Icon */}
+                  <div className="bg-gradient-to-br from-blue-100 to-indigo-100 w-14 h-14 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-md">
+                    <Icon className="text-blue-600" size={24} />
+                  </div>
+
+                  {/* Title */}
+                  <h3 className="text-xl font-bold text-gray-900 mb-3 group-hover:text-blue-600 transition-colors">
+                    {feature.title}
+                  </h3>
+
+                  {/* Description */}
+                  <p className="text-gray-600 leading-relaxed text-sm">
+                    {feature.description}
+                  </p>
+                </Card>
+              </motion.div>
+            );
+          })}
         </div>
       </div>
     </section>
-  )
+  );
 }

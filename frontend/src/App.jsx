@@ -1,28 +1,52 @@
+// src/App.jsx
 import { Routes, Route } from "react-router-dom";
 import { routes } from "./routes";
 import NotFound from "./pages/NotFound";
 import { AuthProvider } from "./context/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
   return (
     <AuthProvider>
       <Routes>
-        {routes.map((route) => {
+        {routes.map((route, index) => {
           if (route.children) {
+            const RouteElement = route.protected ? (
+              <ProtectedRoute role={route.role}>
+                {route.element}
+              </ProtectedRoute>
+            ) : (
+              route.element
+            );
+
             return (
-              <Route key={route.path} path={route.path}>
-                {route.children.map((child) => (
+              <Route key={route.path || index} path={route.path} element={RouteElement}>
+                {route.children.map((child, childIndex) => (
                   <Route
-                    key={`${route.path}/${child.path}`}
+                    key={child.path || childIndex}
                     path={child.path}
                     element={child.element}
+                    index={child.path === ''}
                   />
                 ))}
               </Route>
             );
           }
+
+          const RouteElement = route.protected ? (
+            <ProtectedRoute role={route.role}>
+              {route.element}
+            </ProtectedRoute>
+          ) : (
+            route.element
+          );
+
           return (
-            <Route key={route.path} path={route.path} element={route.element} />
+            <Route
+              key={route.path || index}
+              path={route.path}
+              element={RouteElement}
+            />
           );
         })}
 
