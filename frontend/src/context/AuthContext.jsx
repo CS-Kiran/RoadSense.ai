@@ -58,7 +58,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('user_info');
     setUser(null);
     setIsAuthenticated(false);
-    navigate('/login');
+    navigate('/');
   };
 
   const updateUser = (userData) => {
