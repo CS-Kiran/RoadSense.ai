@@ -1,108 +1,134 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Mail, Lock, User, Phone, AlertCircle, Building2, FileText, MapPin, Upload, X, CheckCircle } from 'lucide-react';
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  ArrowLeft,
+  Mail,
+  Lock,
+  User,
+  Phone,
+  AlertCircle,
+  Building2,
+  FileText,
+  MapPin,
+  Upload,
+  X,
+  CheckCircle,
+} from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export default function OfficialRegister() {
   const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    phoneNumber: '',
-    password: '',
-    confirmPassword: '',
-    department: '',
-    employeeId: '',
-    designation: '',
-    zone: '',
+    fullName: "",
+    email: "",
+    phoneNumber: "",
+    password: "",
+    confirmPassword: "",
+    department: "",
+    employeeId: "",
+    designation: "",
+    zone: "",
   });
   const [consent, setConsent] = useState(false);
   const [errors, setErrors] = useState({});
   const [idFile, setIdFile] = useState(null);
   const [idPreview, setIdPreview] = useState(null);
+  const navigate = useNavigate();
 
   const departments = [
-    'Public Works Department',
-    'Municipal Corporation',
-    'Roads and Transport',
-    'Urban Development',
-    'Infrastructure',
+    "Public Works Department",
+    "Municipal Corporation",
+    "Roads and Transport",
+    "Urban Development",
+    "Infrastructure",
   ];
 
   const zones = [
-    'North District',
-    'South District',
-    'East District',
-    'West District',
-    'Central District',
+    "North District",
+    "South District",
+    "East District",
+    "West District",
+    "Central District",
   ];
 
   const validateForm = () => {
     const newErrors = {};
 
     if (!formData.fullName.trim()) {
-      newErrors.fullName = 'Full name is required';
+      newErrors.fullName = "Full name is required";
     } else if (formData.fullName.length < 2 || formData.fullName.length > 255) {
-      newErrors.fullName = 'Name must be between 2-255 characters';
+      newErrors.fullName = "Name must be between 2-255 characters";
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!formData.email.trim()) {
-      newErrors.email = 'Email is required';
+      newErrors.email = "Email is required";
     } else if (!emailRegex.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email address';
+      newErrors.email = "Please enter a valid email address";
     } else if (formData.email.length > 255) {
-      newErrors.email = 'Email must not exceed 255 characters';
+      newErrors.email = "Email must not exceed 255 characters";
     }
 
     const phoneRegex = /^[6-9]\d{9}$/;
     if (!formData.phoneNumber) {
-      newErrors.phoneNumber = 'Phone number is required';
-    } else if (!phoneRegex.test(formData.phoneNumber.replace(/[\s-]/g, ''))) {
-      newErrors.phoneNumber = 'Please enter a valid 10-digit mobile number';
+      newErrors.phoneNumber = "Phone number is required";
+    } else if (!phoneRegex.test(formData.phoneNumber.replace(/[\s-]/g, ""))) {
+      newErrors.phoneNumber = "Please enter a valid 10-digit mobile number";
     }
 
     if (!formData.employeeId.trim()) {
-      newErrors.employeeId = 'Employee ID is required';
+      newErrors.employeeId = "Employee ID is required";
     } else if (formData.employeeId.length < 4) {
-      newErrors.employeeId = 'Employee ID must be at least 4 characters';
+      newErrors.employeeId = "Employee ID must be at least 4 characters";
     }
 
     if (!formData.department) {
-      newErrors.department = 'Please select your department';
+      newErrors.department = "Please select your department";
     }
 
     if (!formData.designation.trim()) {
-      newErrors.designation = 'Designation is required';
+      newErrors.designation = "Designation is required";
     }
 
     if (!formData.zone) {
-      newErrors.zone = 'Please select your assigned zone';
+      newErrors.zone = "Please select your assigned zone";
     }
 
     // ID Upload validation
     if (!idFile) {
-      newErrors.idUpload = 'Government ID is required for verification';
+      newErrors.idUpload = "Government ID is required for verification";
     }
 
     if (!formData.password) {
-      newErrors.password = 'Password is required';
+      newErrors.password = "Password is required";
     } else if (formData.password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters';
-    } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/.test(formData.password)) {
-      newErrors.password = 'Must include uppercase, lowercase, number & special character';
+      newErrors.password = "Password must be at least 8 characters";
+    } else if (
+      !/(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[@$!%*?&])/.test(
+        formData.password
+      )
+    ) {
+      newErrors.password =
+        "Must include uppercase, lowercase, number & special character";
     }
 
     if (formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
+      newErrors.confirmPassword = "Passwords do not match";
     }
 
     if (!consent) {
-      newErrors.consent = 'You must accept the terms and conditions';
+      newErrors.consent = "You must accept the terms and conditions";
     }
 
     setErrors(newErrors);
@@ -111,23 +137,34 @@ export default function OfficialRegister() {
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
-    
+
     if (file) {
       // Validate file type
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      const allowedTypes = [
+        "image/jpeg",
+        "image/jpg",
+        "image/png",
+        "image/webp",
+      ];
       if (!allowedTypes.includes(file.type)) {
-        setErrors(prev => ({ ...prev, idUpload: 'Only image files (JPG, PNG, WEBP) are allowed' }));
+        setErrors((prev) => ({
+          ...prev,
+          idUpload: "Only image files (JPG, PNG, WEBP) are allowed",
+        }));
         return;
       }
 
       // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        setErrors(prev => ({ ...prev, idUpload: 'File size must be less than 5MB' }));
+        setErrors((prev) => ({
+          ...prev,
+          idUpload: "File size must be less than 5MB",
+        }));
         return;
       }
 
       setIdFile(file);
-      setErrors(prev => ({ ...prev, idUpload: '' }));
+      setErrors((prev) => ({ ...prev, idUpload: "" }));
 
       // Create preview
       const reader = new FileReader();
@@ -142,36 +179,65 @@ export default function OfficialRegister() {
     setIdFile(null);
     setIdPreview(null);
     // Reset file input
-    const fileInput = document.getElementById('idUpload');
-    if (fileInput) fileInput.value = '';
+    const fileInput = document.getElementById("idUpload");
+    if (fileInput) fileInput.value = "";
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+
     if (validateForm()) {
-      const formDataToSubmit = new FormData();
-      Object.keys(formData).forEach(key => {
-        formDataToSubmit.append(key, formData[key]);
-      });
-      formDataToSubmit.append('governmentId', idFile);
-      formDataToSubmit.append('role', 'official');
-      
-      console.log('Official Registration:', formData, 'ID File:', idFile);
-      // Add API call here
+      try {
+        // Create FormData for file upload
+        const formDataToSubmit = new FormData();
+        formDataToSubmit.append("full_name", formData.fullName);
+        formDataToSubmit.append("email", formData.email);
+        formDataToSubmit.append("phone_number", formData.phoneNumber);
+        formDataToSubmit.append("employee_id", formData.employeeId);
+        formDataToSubmit.append("department", formData.department);
+        formDataToSubmit.append("designation", formData.designation);
+        formDataToSubmit.append("zone", formData.zone);
+        formDataToSubmit.append("password", formData.password);
+
+        if (idFile) {
+          formDataToSubmit.append("government_id", idFile);
+        }
+
+        const response = await fetch(
+          "http://localhost:8000/api/register/official",
+          {
+            method: "POST",
+            body: formDataToSubmit, // Don't set Content-Type, browser will set it with boundary
+          }
+        );
+
+        const data = await response.json();
+
+        if (response.ok) {
+          alert(
+            "Registration successful! Your account is pending approval. You will be notified once verified."
+          );
+          navigate("/login");
+        } else {
+          setErrors({ submit: data.detail || "Registration failed" });
+        }
+      } catch (error) {
+        setErrors({ submit: "Unable to connect to server" });
+      }
     }
   };
 
   const handleClearForm = () => {
     setFormData({
-      fullName: '',
-      email: '',
-      phoneNumber: '',
-      password: '',
-      confirmPassword: '',
-      department: '',
-      employeeId: '',
-      designation: '',
-      zone: '',
+      fullName: "",
+      email: "",
+      phoneNumber: "",
+      password: "",
+      confirmPassword: "",
+      department: "",
+      employeeId: "",
+      designation: "",
+      zone: "",
     });
     setConsent(false);
     setErrors({});
@@ -179,9 +245,9 @@ export default function OfficialRegister() {
   };
 
   const handleInputChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+      setErrors((prev) => ({ ...prev, [field]: "" }));
     }
   };
 
@@ -210,7 +276,11 @@ export default function OfficialRegister() {
         className="fixed top-6 left-6 z-50"
       >
         <Link to="/">
-          <Button variant="ghost" size="sm" className="gap-2 hover:bg-primary/10">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-2 hover:bg-primary/10"
+          >
             <ArrowLeft className="h-4 w-4" />
             Home
           </Button>
@@ -252,9 +322,15 @@ export default function OfficialRegister() {
                     id="fullName"
                     type="text"
                     placeholder="Kiran Patil"
-                    className={`pl-10 h-11 ${errors.fullName ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                    className={`pl-10 h-11 ${
+                      errors.fullName
+                        ? "border-destructive focus-visible:ring-destructive"
+                        : ""
+                    }`}
                     value={formData.fullName}
-                    onChange={(e) => handleInputChange('fullName', e.target.value)}
+                    onChange={(e) =>
+                      handleInputChange("fullName", e.target.value)
+                    }
                   />
                 </div>
                 {errors.fullName && (
@@ -276,9 +352,15 @@ export default function OfficialRegister() {
                     id="employeeId"
                     type="text"
                     placeholder="EMP123456"
-                    className={`pl-10 h-11 ${errors.employeeId ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                    className={`pl-10 h-11 ${
+                      errors.employeeId
+                        ? "border-destructive focus-visible:ring-destructive"
+                        : ""
+                    }`}
                     value={formData.employeeId}
-                    onChange={(e) => handleInputChange('employeeId', e.target.value)}
+                    onChange={(e) =>
+                      handleInputChange("employeeId", e.target.value)
+                    }
                   />
                 </div>
                 {errors.employeeId && (
@@ -300,9 +382,13 @@ export default function OfficialRegister() {
                     id="email"
                     type="email"
                     placeholder="official@gov.in"
-                    className={`pl-10 h-11 ${errors.email ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                    className={`pl-10 h-11 ${
+                      errors.email
+                        ? "border-destructive focus-visible:ring-destructive"
+                        : ""
+                    }`}
                     value={formData.email}
-                    onChange={(e) => handleInputChange('email', e.target.value)}
+                    onChange={(e) => handleInputChange("email", e.target.value)}
                   />
                 </div>
                 {errors.email && (
@@ -324,9 +410,15 @@ export default function OfficialRegister() {
                     id="phoneNumber"
                     type="tel"
                     placeholder="10-digit number"
-                    className={`pl-10 h-11 ${errors.phoneNumber ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                    className={`pl-10 h-11 ${
+                      errors.phoneNumber
+                        ? "border-destructive focus-visible:ring-destructive"
+                        : ""
+                    }`}
                     value={formData.phoneNumber}
-                    onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
+                    onChange={(e) =>
+                      handleInputChange("phoneNumber", e.target.value)
+                    }
                     maxLength={10}
                   />
                 </div>
@@ -345,9 +437,15 @@ export default function OfficialRegister() {
                 </Label>
                 <Select
                   value={formData.department}
-                  onValueChange={(value) => handleInputChange('department', value)}
+                  onValueChange={(value) =>
+                    handleInputChange("department", value)
+                  }
                 >
-                  <SelectTrigger className={`h-11 ${errors.department ? 'border-destructive' : ''}`}>
+                  <SelectTrigger
+                    className={`h-11 ${
+                      errors.department ? "border-destructive" : ""
+                    }`}
+                  >
                     <div className="flex items-center">
                       <Building2 className="h-4 w-4 mr-2 text-muted-foreground" />
                       <SelectValue placeholder="Select department" />
@@ -380,9 +478,15 @@ export default function OfficialRegister() {
                     id="designation"
                     type="text"
                     placeholder="e.g., Engineer"
-                    className={`pl-10 h-11 ${errors.designation ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                    className={`pl-10 h-11 ${
+                      errors.designation
+                        ? "border-destructive focus-visible:ring-destructive"
+                        : ""
+                    }`}
                     value={formData.designation}
-                    onChange={(e) => handleInputChange('designation', e.target.value)}
+                    onChange={(e) =>
+                      handleInputChange("designation", e.target.value)
+                    }
                   />
                 </div>
                 {errors.designation && (
@@ -401,9 +505,11 @@ export default function OfficialRegister() {
               </Label>
               <Select
                 value={formData.zone}
-                onValueChange={(value) => handleInputChange('zone', value)}
+                onValueChange={(value) => handleInputChange("zone", value)}
               >
-                <SelectTrigger className={`h-11 ${errors.zone ? 'border-destructive' : ''}`}>
+                <SelectTrigger
+                  className={`h-11 ${errors.zone ? "border-destructive" : ""}`}
+                >
                   <div className="flex items-center">
                     <MapPin className="h-4 w-4 mr-2 text-muted-foreground" />
                     <SelectValue placeholder="Select your assigned zone" />
@@ -430,7 +536,7 @@ export default function OfficialRegister() {
               <Label htmlFor="idUpload" className="text-sm font-medium">
                 Government ID
               </Label>
-              
+
               {!idFile ? (
                 <div className="relative">
                   <input
@@ -443,15 +549,18 @@ export default function OfficialRegister() {
                   <label
                     htmlFor="idUpload"
                     className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
-                      errors.idUpload 
-                        ? 'border-destructive bg-destructive/5 hover:bg-destructive/10' 
-                        : 'border-muted-foreground/25 bg-muted/30 hover:bg-muted/50'
+                      errors.idUpload
+                        ? "border-destructive bg-destructive/5 hover:bg-destructive/10"
+                        : "border-muted-foreground/25 bg-muted/30 hover:bg-muted/50"
                     }`}
                   >
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Upload className="h-8 w-8 text-muted-foreground" />
                       <p className="text-sm text-muted-foreground">
-                        <span className="font-medium text-primary">Click to upload</span> or drag and drop
+                        <span className="font-medium text-primary">
+                          Click to upload
+                        </span>{" "}
+                        or drag and drop
                       </p>
                       <p className="text-xs text-muted-foreground">
                         JPG, PNG or WEBP (Max 5MB)
@@ -463,16 +572,18 @@ export default function OfficialRegister() {
                 <div className="relative w-full border-2 border-primary/20 rounded-lg p-4 bg-primary/5">
                   <div className="flex items-center gap-4">
                     {idPreview && (
-                      <img 
-                        src={idPreview} 
-                        alt="ID Preview" 
+                      <img
+                        src={idPreview}
+                        alt="ID Preview"
                         className="w-20 h-20 object-cover rounded-md border"
                       />
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <CheckCircle className="h-4 w-4 text-primary flex-shrink-0" />
-                        <p className="text-sm font-medium truncate">{idFile.name}</p>
+                        <p className="text-sm font-medium truncate">
+                          {idFile.name}
+                        </p>
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {(idFile.size / 1024).toFixed(2)} KB
@@ -490,7 +601,7 @@ export default function OfficialRegister() {
                   </div>
                 </div>
               )}
-              
+
               {errors.idUpload && (
                 <p className="text-xs text-destructive flex items-center gap-1.5">
                   <AlertCircle className="h-3 w-3" />
@@ -515,9 +626,15 @@ export default function OfficialRegister() {
                     id="password"
                     type="password"
                     placeholder="••••••••"
-                    className={`pl-10 h-11 ${errors.password ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                    className={`pl-10 h-11 ${
+                      errors.password
+                        ? "border-destructive focus-visible:ring-destructive"
+                        : ""
+                    }`}
                     value={formData.password}
-                    onChange={(e) => handleInputChange('password', e.target.value)}
+                    onChange={(e) =>
+                      handleInputChange("password", e.target.value)
+                    }
                   />
                 </div>
                 {errors.password && (
@@ -530,7 +647,10 @@ export default function OfficialRegister() {
 
               {/* Confirm Password */}
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword" className="text-sm font-medium">
+                <Label
+                  htmlFor="confirmPassword"
+                  className="text-sm font-medium"
+                >
                   Confirm Password
                 </Label>
                 <div className="relative">
@@ -539,9 +659,15 @@ export default function OfficialRegister() {
                     id="confirmPassword"
                     type="password"
                     placeholder="••••••••"
-                    className={`pl-10 h-11 ${errors.confirmPassword ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                    className={`pl-10 h-11 ${
+                      errors.confirmPassword
+                        ? "border-destructive focus-visible:ring-destructive"
+                        : ""
+                    }`}
                     value={formData.confirmPassword}
-                    onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+                    onChange={(e) =>
+                      handleInputChange("confirmPassword", e.target.value)
+                    }
                   />
                 </div>
                 {errors.confirmPassword && (
@@ -560,18 +686,26 @@ export default function OfficialRegister() {
                   id="consent"
                   checked={consent}
                   onCheckedChange={setConsent}
-                  className={`mt-0.5 ${errors.consent ? 'border-destructive' : ''}`}
+                  className={`mt-0.5 ${
+                    errors.consent ? "border-destructive" : ""
+                  }`}
                 />
                 <Label
                   htmlFor="consent"
                   className="text-sm leading-relaxed cursor-pointer font-normal"
                 >
-                  I certify that I am a government official and agree to the{' '}
-                  <Link to="/terms" className="text-primary hover:underline font-medium">
+                  I certify that I am a government official and agree to the{" "}
+                  <Link
+                    to="/terms"
+                    className="text-primary hover:underline font-medium"
+                  >
                     Terms
-                  </Link>{' '}
-                  and{' '}
-                  <Link to="/privacy" className="text-primary hover:underline font-medium">
+                  </Link>{" "}
+                  and{" "}
+                  <Link
+                    to="/privacy"
+                    className="text-primary hover:underline font-medium"
+                  >
                     Privacy Policy
                   </Link>
                 </Label>
@@ -605,7 +739,7 @@ export default function OfficialRegister() {
         <motion.div variants={itemVariants} className="mt-6 space-y-3">
           <div className="text-center">
             <p className="text-sm text-muted-foreground">
-              Already have an account?{' '}
+              Already have an account?{" "}
               <Link
                 to="/login"
                 className="text-primary hover:underline font-medium"
@@ -616,7 +750,7 @@ export default function OfficialRegister() {
           </div>
           <div className="text-center">
             <p className="text-sm text-muted-foreground">
-              Are you a citizen?{' '}
+              Are you a citizen?{" "}
               <Link
                 to="/register/citizen"
                 className="text-primary hover:underline font-medium"

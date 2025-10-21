@@ -1,3 +1,5 @@
 *.env
-roadsense-env
-__pycache__
+roadsense-env/
+__pycache__/
+uploads/*
+test*

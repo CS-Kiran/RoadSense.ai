@@ -1,19 +1,79 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, Mail, Lock } from 'lucide-react';
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { ArrowLeft, Mail, Lock } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
+  const { login } = useAuth();
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    console.log('Login attempt:', { email, password });
+
+    try {
+      const response = await fetch("http://localhost:8000/api/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Use AuthContext login
+        login(data.access_token);
+
+        localStorage.setItem("user_role", data.role);
+
+        // Fetch user info
+        fetchUserInfo(data.access_token);
+
+        navigate("/dashboard");
+      } else {
+        setError(data.detail || "Login failed");
+      }
+    } catch (error) {
+      setError("Unable to connect to server");
+    }
+  };
+
+  // Function to fetch user information
+  const fetchUserInfo = async (token) => {
+    try {
+      const response = await fetch("http://localhost:8000/api/users/me", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      const userData = await response.json();
+
+      if (response.ok) {
+        // Store user info
+        localStorage.setItem("user_info", JSON.stringify(userData));
+      }
+    } catch (error) {
+      console.error("Failed to fetch user info:", error);
+    }
   };
 
   return (
@@ -32,7 +92,9 @@ export default function LoginPage() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.2 }}
               >
-                <CardTitle className="text-3xl font-bold text-primary">Login</CardTitle>
+                <CardTitle className="text-3xl font-bold text-primary">
+                  Login
+                </CardTitle>
               </motion.div>
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
@@ -113,9 +175,9 @@ export default function LoginPage() {
                 className="text-center pt-2"
               >
                 <p className="text-sm text-muted-foreground">
-                  Don't have an account?{' '}
-                  <Link 
-                    to="/register/citizen" 
+                  Don't have an account?{" "}
+                  <Link
+                    to="/register/citizen"
                     className="text-primary hover:underline font-semibold transition-colors"
                   >
                     Sign up here
@@ -128,8 +190,8 @@ export default function LoginPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.7 }}
               >
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   className="w-full h-11 text-base font-semibold"
                 >
                   Login

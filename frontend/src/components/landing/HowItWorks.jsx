@@ -35,7 +35,7 @@ export default function HowItWorks() {
         <div className="mb-16 text-center">
           <Badge variant="outline" className="mb-4">Simple Process</Badge>
           <h2 className="mb-4 text-3xl font-bold tracking-tight sm:text-4xl">
-            How Roadmap.ai Works
+            How RoadSense.ai Works
           </h2>
           <p className="mx-auto max-w-2xl text-lg text-muted-foreground">
             From reporting to resolution in four simple steps

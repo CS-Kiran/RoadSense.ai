@@ -1,19 +1,19 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ArrowLeft, Mail, Lock, User, AlertCircle } from 'lucide-react';
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ArrowLeft, Mail, Lock, User, AlertCircle } from "lucide-react";
 
 export default function UserRegister() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
+    fullName: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
   });
   const [consent, setConsent] = useState(false);
   const [errors, setErrors] = useState({});
@@ -22,64 +22,98 @@ export default function UserRegister() {
     const newErrors = {};
 
     if (!formData.fullName.trim()) {
-      newErrors.fullName = 'Full name is required';
+      newErrors.fullName = "Full name is required";
     } else if (formData.fullName.length < 2) {
-      newErrors.fullName = 'Name must be at least 2 characters';
+      newErrors.fullName = "Name must be at least 2 characters";
     } else if (formData.fullName.length > 255) {
-      newErrors.fullName = 'Name must not exceed 255 characters';
+      newErrors.fullName = "Name must not exceed 255 characters";
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!formData.email.trim()) {
-      newErrors.email = 'Email is required';
+      newErrors.email = "Email is required";
     } else if (!emailRegex.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email address';
+      newErrors.email = "Please enter a valid email address";
     } else if (formData.email.length > 255) {
-      newErrors.email = 'Email must not exceed 255 characters';
+      newErrors.email = "Email must not exceed 255 characters";
     }
 
     if (!formData.password) {
-      newErrors.password = 'Password is required';
+      newErrors.password = "Password is required";
     } else if (formData.password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters';
-    } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/.test(formData.password)) {
-      newErrors.password = 'Must include uppercase, lowercase, number & special character';
+      newErrors.password = "Password must be at least 8 characters";
+    } else if (
+      !/(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[@$!%*?&])/.test(
+        formData.password
+      )
+    ) {
+      newErrors.password =
+        "Must include uppercase, lowercase, number & special character";
     }
 
     if (formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
+      newErrors.confirmPassword = "Passwords do not match";
     }
 
     if (!consent) {
-      newErrors.consent = 'You must accept the terms and conditions';
+      newErrors.consent = "You must accept the terms and conditions";
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+
     if (validateForm()) {
-      console.log('Citizen Registration:', { ...formData, role: 'citizen' });
+      try {
+        const response = await fetch(
+          "http://localhost:8000/api/register/citizen",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              full_name: formData.fullName,
+              email: formData.email,
+              password: formData.password,
+            }),
+          }
+        );
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // Success - redirect to login
+          alert("Registration successful! Please login.");
+          navigate("/login");
+        } else {
+          // Handle error
+          setErrors({ submit: data.detail || "Registration failed" });
+        }
+      } catch (error) {
+        setErrors({ submit: "Unable to connect to server" });
+      }
     }
   };
 
   const handleClearForm = () => {
     setFormData({
-      fullName: '',
-      email: '',
-      password: '',
-      confirmPassword: '',
+      fullName: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
     });
     setConsent(false);
     setErrors({});
   };
 
   const handleInputChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+      setErrors((prev) => ({ ...prev, [field]: "" }));
     }
   };
 
@@ -108,7 +142,11 @@ export default function UserRegister() {
         className="fixed top-6 left-6 z-50"
       >
         <Link to="/">
-          <Button variant="ghost" size="sm" className="gap-2 hover:bg-primary/10">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-2 hover:bg-primary/10"
+          >
             <ArrowLeft className="h-4 w-4" />
             Home
           </Button>
@@ -148,9 +186,15 @@ export default function UserRegister() {
                   id="fullName"
                   type="text"
                   placeholder="Kiran Patil"
-                  className={`pl-10 h-11 ${errors.fullName ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                  className={`pl-10 h-11 ${
+                    errors.fullName
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : ""
+                  }`}
                   value={formData.fullName}
-                  onChange={(e) => handleInputChange('fullName', e.target.value)}
+                  onChange={(e) =>
+                    handleInputChange("fullName", e.target.value)
+                  }
                 />
               </div>
               {errors.fullName && (
@@ -172,9 +216,13 @@ export default function UserRegister() {
                   id="email"
                   type="email"
                   placeholder="kiran@example.com"
-                  className={`pl-10 h-11 ${errors.email ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                  className={`pl-10 h-11 ${
+                    errors.email
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : ""
+                  }`}
                   value={formData.email}
-                  onChange={(e) => handleInputChange('email', e.target.value)}
+                  onChange={(e) => handleInputChange("email", e.target.value)}
                 />
               </div>
               {errors.email && (
@@ -196,9 +244,15 @@ export default function UserRegister() {
                   id="password"
                   type="password"
                   placeholder="••••••••"
-                  className={`pl-10 h-11 ${errors.password ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                  className={`pl-10 h-11 ${
+                    errors.password
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : ""
+                  }`}
                   value={formData.password}
-                  onChange={(e) => handleInputChange('password', e.target.value)}
+                  onChange={(e) =>
+                    handleInputChange("password", e.target.value)
+                  }
                 />
               </div>
               {errors.password && (
@@ -220,9 +274,15 @@ export default function UserRegister() {
                   id="confirmPassword"
                   type="password"
                   placeholder="••••••••"
-                  className={`pl-10 h-11 ${errors.confirmPassword ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+                  className={`pl-10 h-11 ${
+                    errors.confirmPassword
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : ""
+                  }`}
                   value={formData.confirmPassword}
-                  onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+                  onChange={(e) =>
+                    handleInputChange("confirmPassword", e.target.value)
+                  }
                 />
               </div>
               {errors.confirmPassword && (
@@ -240,18 +300,26 @@ export default function UserRegister() {
                   id="consent"
                   checked={consent}
                   onCheckedChange={setConsent}
-                  className={`mt-0.5 ${errors.consent ? 'border-destructive' : ''}`}
+                  className={`mt-0.5 ${
+                    errors.consent ? "border-destructive" : ""
+                  }`}
                 />
                 <Label
                   htmlFor="consent"
                   className="text-sm leading-relaxed cursor-pointer font-normal"
                 >
-                  I agree to the{' '}
-                  <Link to="/terms" className="text-primary hover:underline font-medium">
+                  I agree to the{" "}
+                  <Link
+                    to="/terms"
+                    className="text-primary hover:underline font-medium"
+                  >
                     Terms
-                  </Link>{' '}
-                  and{' '}
-                  <Link to="/privacy" className="text-primary hover:underline font-medium">
+                  </Link>{" "}
+                  and{" "}
+                  <Link
+                    to="/privacy"
+                    className="text-primary hover:underline font-medium"
+                  >
                     Privacy Policy
                   </Link>
                 </Label>
@@ -285,7 +353,7 @@ export default function UserRegister() {
         <motion.div variants={itemVariants} className="mt-6 space-y-3">
           <div className="text-center">
             <p className="text-sm text-muted-foreground">
-              Already have an account?{' '}
+              Already have an account?{" "}
               <Link
                 to="/login"
                 className="text-primary hover:underline font-medium"
@@ -296,7 +364,7 @@ export default function UserRegister() {
           </div>
           <div className="text-center">
             <p className="text-sm text-muted-foreground">
-              Government official?{' '}
+              Government official?{" "}
               <Link
                 to="/register/official"
                 className="text-primary hover:underline font-medium"
