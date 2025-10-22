@@ -8,7 +8,6 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import {
   MapPin,
   Camera,
@@ -20,7 +19,6 @@ import {
   Navigation,
   Upload,
   Crosshair,
-  Info,
 } from "lucide-react";
 import axios from "@/api/axios";
 
@@ -46,6 +44,7 @@ function LocationMarker({ position, setPosition, setFormData }) {
           `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
         );
         const data = await response.json();
+
         setFormData((prev) => ({
           ...prev,
           location: {
@@ -73,158 +72,217 @@ function LocationMarker({ position, setPosition, setFormData }) {
 
 const ReportIssuePage = () => {
   const navigate = useNavigate();
-  const fileInputRef = useRef(null);
-
   const [currentStep, setCurrentStep] = useState(1);
-  const [mapPosition, setMapPosition] = useState([20.5937, 78.9629]); // India center
-  const [markerPosition, setMarkerPosition] = useState(null);
-  const [loadingLocation, setLoadingLocation] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(true);
+  const [mapPosition, setMapPosition] = useState(null);
+  const mapRef = useRef(null);
 
+  // Form Data - Matches API/Database schema exactly
   const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    issue_type: "", // Must match IssueType enum values
     location: {
       latitude: null,
       longitude: null,
       address: "",
     },
-    issueType: "",
-    title: "",
-    description: "",
     images: [],
-    isAnonymous: false,
+    is_anonymous: false,
   });
 
   const [errors, setErrors] = useState({});
+  const [photoPreview, setPhotoPreview] = useState([]);
 
-  const issueTypes = [
-    { value: "pothole", label: "Pothole", icon: "🕳️" },
-    { value: "crack", label: "Road Crack", icon: "⚡" },
-    { value: "debris", label: "Debris/Obstacle", icon: "🚧" },
-    { value: "faded_marking", label: "Faded Road Marking", icon: "🎨" },
-    { value: "street_light", label: "Street Light Issue", icon: "💡" },
-    { value: "traffic_sign", label: "Traffic Sign Issue", icon: "🚦" },
-    { value: "drainage", label: "Drainage Problem", icon: "🌊" },
-    { value: "other", label: "Other Issue", icon: "📝" },
+  // Categories - MUST match IssueType enum in models.py exactly
+  const categories = [
+    {
+      id: "pothole", // matches IssueType.POTHOLE
+      name: "Pothole",
+      icon: "🕳️",
+      color: "bg-red-100 text-red-700 border-red-200",
+    },
+    {
+      id: "crack", // matches IssueType.CRACK
+      name: "Road Crack",
+      icon: "🔀",
+      color: "bg-orange-100 text-orange-700 border-orange-200",
+    },
+    {
+      id: "debris", // matches IssueType.DEBRIS
+      name: "Debris",
+      icon: "🗑️",
+      color: "bg-amber-100 text-amber-700 border-amber-200",
+    },
+    {
+      id: "faded_marking", // matches IssueType.FADED_MARKING
+      name: "Faded Marking",
+      icon: "〰️",
+      color: "bg-yellow-100 text-yellow-700 border-yellow-200",
+    },
+    {
+      id: "street_light", // matches IssueType.STREET_LIGHT
+      name: "Street Light",
+      icon: "💡",
+      color: "bg-purple-100 text-purple-700 border-purple-200",
+    },
+    {
+      id: "traffic_sign", // matches IssueType.TRAFFIC_SIGN
+      name: "Traffic Sign",
+      icon: "🚦",
+      color: "bg-indigo-100 text-indigo-700 border-indigo-200",
+    },
+    {
+      id: "drainage", // matches IssueType.DRAINAGE
+      name: "Drainage Issue",
+      icon: "🌊",
+      color: "bg-cyan-100 text-cyan-700 border-cyan-200",
+    },
+    {
+      id: "other", // matches IssueType.OTHER
+      name: "Other",
+      icon: "📋",
+      color: "bg-zinc-100 text-zinc-700 border-zinc-200",
+    },
   ];
 
-  // Get user's current location on mount
+  // Get User Location on Mount
   useEffect(() => {
     getUserLocation();
   }, []);
 
   const getUserLocation = () => {
-    setLoadingLocation(true);
+    setLocationLoading(true);
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          setMapPosition([lat, lng]);
-          setMarkerPosition([lat, lng]);
+          const { latitude, longitude } = position.coords;
+          setMapPosition([latitude, longitude]);
 
-          // Get address
+          // Reverse geocode to get address
           try {
             const response = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
             );
             const data = await response.json();
+
             setFormData((prev) => ({
               ...prev,
               location: {
-                latitude: lat,
-                longitude: lng,
+                latitude,
+                longitude,
                 address:
-                  data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+                  data.display_name ||
+                  `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
               },
             }));
           } catch (error) {
             setFormData((prev) => ({
               ...prev,
               location: {
-                latitude: lat,
-                longitude: lng,
-                address: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+                latitude,
+                longitude,
+                address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
               },
             }));
           }
-          setLoadingLocation(false);
+          setLocationLoading(false);
         },
         (error) => {
-          console.error("Error getting location:", error);
-          setLoadingLocation(false);
+          console.error("Location error:", error);
+          setLocationLoading(false);
+          // Set default location (Pune)
+          const defaultLat = 18.5204;
+          const defaultLng = 73.8567;
+          setMapPosition([defaultLat, defaultLng]);
+          setFormData((prev) => ({
+            ...prev,
+            location: {
+              latitude: defaultLat,
+              longitude: defaultLng,
+              address: "Pune, Maharashtra, India",
+            },
+          }));
         }
       );
     } else {
-      setLoadingLocation(false);
+      setLocationLoading(false);
+      // Set default location if geolocation not available
+      const defaultLat = 18.5204;
+      const defaultLng = 73.8567;
+      setMapPosition([defaultLat, defaultLng]);
+      setFormData((prev) => ({
+        ...prev,
+        location: {
+          latitude: defaultLat,
+          longitude: defaultLng,
+          address: "Pune, Maharashtra, India",
+        },
+      }));
     }
   };
 
-  const handleImageUpload = (e) => {
+  // Handle Photo Upload
+  const handlePhotoUpload = (e) => {
     const files = Array.from(e.target.files);
-    const maxImages = 5;
-    const maxSize = 10 * 1024 * 1024; // 10MB
-    const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 
-    // Validate number of images
-    if (formData.images.length + files.length > maxImages) {
-      setErrors((prev) => ({
-        ...prev,
-        images: `Maximum ${maxImages} images allowed`,
-      }));
+    if (formData.images.length + files.length > 5) {
+      setErrors({ ...errors, images: "Maximum 5 photos allowed" });
       return;
     }
 
-    // Validate each file
-    const validFiles = [];
+    // Validate file types and sizes (matches API validation)
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    const maxSize = 10 * 1024 * 1024; // 10MB
+
     for (const file of files) {
       if (!allowedTypes.includes(file.type)) {
-        setErrors((prev) => ({
-          ...prev,
-          images: "Only JPG, JPEG, PNG, and WEBP images are allowed",
-        }));
-        continue;
+        setErrors({ ...errors, images: "Only JPG, PNG, and WEBP images are allowed" });
+        return;
       }
       if (file.size > maxSize) {
-        setErrors((prev) => ({
-          ...prev,
-          images: "Each image must be less than 10MB",
-        }));
-        continue;
+        setErrors({ ...errors, images: "Each image must be less than 10MB" });
+        return;
       }
-      validFiles.push(file);
     }
 
-    setFormData((prev) => ({
-      ...prev,
-      images: [...prev.images, ...validFiles],
-    }));
-    setErrors((prev) => ({ ...prev, images: null }));
+    // Create preview URLs
+    const newPreviews = files.map((file) => URL.createObjectURL(file));
+    setPhotoPreview([...photoPreview, ...newPreviews]);
+    setFormData({ ...formData, images: [...formData.images, ...files] });
+    setErrors({ ...errors, images: null });
   };
 
-  const removeImage = (index) => {
-    setFormData((prev) => ({
-      ...prev,
-      images: prev.images.filter((_, i) => i !== index),
-    }));
+  // Remove Photo
+  const removePhoto = (index) => {
+    const newPhotos = formData.images.filter((_, i) => i !== index);
+    const newPreviews = photoPreview.filter((_, i) => i !== index);
+    setFormData({ ...formData, images: newPhotos });
+    setPhotoPreview(newPreviews);
   };
 
+  // Validate Current Step
   const validateStep = (step) => {
     const newErrors = {};
 
     if (step === 1) {
       if (!formData.location.latitude || !formData.location.longitude) {
-        newErrors.location = "Please select a location on the map";
+        newErrors.location = "Location is required";
       }
     } else if (step === 2) {
-      if (!formData.issueType) {
-        newErrors.issueType = "Please select an issue type";
+      if (!formData.issue_type) {
+        newErrors.issue_type = "Please select a category";
       }
     } else if (step === 3) {
-      if (!formData.title || formData.title.trim().length < 5) {
-        newErrors.title = "Title must be at least 5 characters";
+      if (!formData.title.trim()) {
+        newErrors.title = "Title is required";
       }
-      if (!formData.description || formData.description.trim().length < 10) {
-        newErrors.description = "Description must be at least 10 characters";
+      if (!formData.description.trim()) {
+        newErrors.description = "Description is required";
+      }
+      if (formData.description.length < 20) {
+        newErrors.description = "Description must be at least 20 characters";
       }
     }
 
@@ -232,441 +290,457 @@ const ReportIssuePage = () => {
     return Object.keys(newErrors).length === 0;
   };
 
+  // Next Step
   const handleNext = () => {
     if (validateStep(currentStep)) {
-      setCurrentStep((prev) => prev + 1);
+      setCurrentStep(currentStep + 1);
     }
   };
 
-  const handleBack = () => {
-    setCurrentStep((prev) => prev - 1);
+  // Previous Step
+  const handlePrevious = () => {
+    setCurrentStep(currentStep - 1);
     setErrors({});
   };
 
+  // Submit Form
   const handleSubmit = async () => {
     if (!validateStep(3)) return;
 
-    setSubmitting(true);
-    setErrors({});
+    setIsSubmitting(true);
 
     try {
-      // Get token from localStorage
-      const token = localStorage.getItem("token");
-      if (!token) {
-        navigate("/login");
-        return;
-      }
-
-      // Create FormData object
       const submitData = new FormData();
+      
+      // Append fields exactly as API expects
+      submitData.append("title", formData.title);
+      submitData.append("description", formData.description);
+      submitData.append("issue_type", formData.issue_type); // lowercase value
       submitData.append("latitude", formData.location.latitude);
       submitData.append("longitude", formData.location.longitude);
       submitData.append("address", formData.location.address);
-      submitData.append("issue_type", formData.issueType);
-      submitData.append("title", formData.title);
-      submitData.append("description", formData.description);
-      submitData.append("is_anonymous", formData.isAnonymous);
+      submitData.append("is_anonymous", formData.is_anonymous);
 
-      // Append images
+      // Append images (API expects field name "images")
       formData.images.forEach((image) => {
         submitData.append("images", image);
       });
 
-      // Submit to API
       const response = await axios.post("/api/reports", submitData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          Authorization: `Bearer ${token}`,
+        headers: { 
+          "Content-Type": "multipart/form-data" 
         },
       });
 
-      // Success - navigate to dashboard or show success message
-      navigate("/citizen/dashboard", {
-        state: {
-          message: "Report submitted successfully!",
-          reportId: response.data.id,
-        },
+      console.log("Report created successfully:", response.data);
+
+      // Success - navigate to reports
+      navigate("/citizen/reports", {
+        state: { message: "Report submitted successfully!" },
       });
     } catch (error) {
-      console.error("Error submitting report:", error);
-      if (error.response?.status === 401) {
-        navigate("/login");
-      } else if (error.response?.data?.detail) {
-        setErrors({
-          submit:
-            typeof error.response.data.detail === "string"
-              ? error.response.data.detail
-              : "Failed to submit report. Please try again.",
-        });
-      } else {
-        setErrors({
-          submit: "Failed to submit report. Please check your connection.",
-        });
+      console.error("Submit error:", error);
+      let errorMessage = "Failed to submit report. Please try again.";
+      
+      if (error.response?.data?.detail) {
+        if (typeof error.response.data.detail === 'string') {
+          errorMessage = error.response.data.detail;
+        } else if (Array.isArray(error.response.data.detail)) {
+          errorMessage = error.response.data.detail.map(e => e.msg).join(', ');
+        }
       }
+      
+      setErrors({ submit: errorMessage });
     } finally {
-      setSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
-        {/* Header */}
-        <div className="mb-8 text-center">
-          <h1 className="text-4xl font-bold text-slate-800 mb-2">
-            Report an Issue
-          </h1>
-          <p className="text-slate-600">
-            Help us keep our roads safe and well-maintained
-          </p>
-        </div>
+  // Render Step Content
+  const renderStepContent = () => {
+    switch (currentStep) {
+      case 1:
+        return (
+          <div className="space-y-6">
+            <div className="text-center mb-4">
+              <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                <MapPin className="text-blue-600" size={32} />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900">Location</h2>
+              <p className="text-gray-600">Where is the issue located?</p>
+            </div>
 
-        {/* Progress Steps */}
-        <div className="mb-8">
-          <div className="flex justify-between items-center max-w-2xl mx-auto">
-            {[
-              { num: 1, label: "Location", icon: MapPin },
-              { num: 2, label: "Issue Type", icon: FileText },
-              { num: 3, label: "Details", icon: Camera },
-            ].map((step, index) => (
-              <React.Fragment key={step.num}>
-                <div className="flex flex-col items-center">
-                  <div
-                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
-                      currentStep >= step.num
-                        ? "bg-blue-600 text-white"
-                        : "bg-white text-slate-400 border-2 border-slate-300"
-                    }`}
-                  >
-                    <step.icon className="w-5 h-5" />
+            {locationLoading ? (
+              <div className="text-center py-12">
+                <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
+                <p className="text-gray-600">Detecting your location...</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Map Preview */}
+                <div className="border-2 border-gray-200 rounded-xl overflow-hidden shadow-lg">
+                  <div style={{ height: "300px", width: "100%" }}>
+                    {mapPosition && (
+                      <MapContainer
+                        center={mapPosition}
+                        zoom={15}
+                        style={{ height: "100%", width: "100%" }}
+                        ref={mapRef}
+                      >
+                        <TileLayer
+                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        />
+                        <LocationMarker
+                          position={mapPosition}
+                          setPosition={setMapPosition}
+                          setFormData={setFormData}
+                        />
+                      </MapContainer>
+                    )}
                   </div>
-                  <span
-                    className={`mt-2 text-sm font-medium ${
-                      currentStep >= step.num
-                        ? "text-blue-600"
-                        : "text-slate-400"
-                    }`}
-                  >
-                    {step.label}
-                  </span>
-                </div>
-                {index < 2 && (
-                  <div
-                    className={`flex-1 h-1 mx-4 rounded transition-all ${
-                      currentStep > step.num ? "bg-blue-600" : "bg-slate-300"
-                    }`}
-                  />
-                )}
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
 
-        {/* Step Content */}
-        <Card className="p-8 shadow-xl border-0">
-          {/* Step 1: Location */}
-          {currentStep === 1 && (
-            <div className="space-y-6">
-              <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-slate-800 mb-2">
-                  Where is the issue located?
-                </h2>
-                <p className="text-slate-600">
-                  {loadingLocation
-                    ? "Detecting your location..."
-                    : "Click on the map to adjust location"}
-                </p>
-              </div>
-
-              {/* Location Detection Button */}
-              <div className="flex justify-center mb-4">
-                <Button
-                  onClick={getUserLocation}
-                  disabled={loadingLocation}
-                  variant="outline"
-                  className="gap-2"
-                >
-                  {loadingLocation ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Navigation className="w-4 h-4" />
-                  )}
-                  Use My Current Location
-                </Button>
-              </div>
-
-              {/* Map */}
-              <div className="relative rounded-xl overflow-hidden border-4 border-slate-200 shadow-lg">
-                <MapContainer
-                  center={mapPosition}
-                  zoom={13}
-                  className="h-[500px] w-full"
-                  zoomControl={true}
-                >
-                  <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  />
-                  <LocationMarker
-                    position={markerPosition}
-                    setPosition={setMarkerPosition}
-                    setFormData={setFormData}
-                  />
-                </MapContainer>
-
-                {/* Map Info Banner */}
-                <div className="absolute top-4 left-4 right-4 z-[1000] pointer-events-none">
-                  <div className="bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3 flex items-start gap-3">
-                    <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-slate-700">
-                      <strong>Tip:</strong> The marker shows where the issue
-                      will be reported
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Address Display */}
-              {formData.location.address && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <MapPin className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  {/* Map Instructions */}
+                  <div className="bg-blue-50 border-t-2 border-blue-200 p-4 flex items-start gap-3">
+                    <Crosshair
+                      className="text-blue-600 mt-1 flex-shrink-0"
+                      size={20}
+                    />
                     <div>
-                      <p className="text-sm font-medium text-slate-700 mb-1">
-                        Selected Location:
+                      <p className="text-sm font-semibold text-gray-900 mb-1">
+                        Click on the map to adjust location
                       </p>
-                      <p className="text-sm text-slate-600">
+                      <p className="text-xs text-gray-600">
+                        The marker shows where the issue will be reported
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Location Info Card */}
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6">
+                  <div className="flex items-start gap-3 mb-4">
+                    <Navigation className="text-blue-600 mt-1" size={20} />
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-gray-900 mb-1">
+                        Current Location
+                      </h3>
+                      <p className="text-sm text-gray-700">
                         {formData.location.address}
                       </p>
                     </div>
+                    <CheckCircle className="text-green-600" size={20} />
+                  </div>
+
+                  <div className="flex gap-4 text-sm text-gray-600">
+                    <span>Lat: {formData.location.latitude?.toFixed(6)}</span>
+                    <span>Lng: {formData.location.longitude?.toFixed(6)}</span>
                   </div>
                 </div>
-              )}
 
-              {errors.location && (
-                <div className="flex items-center gap-2 text-red-600 text-sm">
-                  <AlertCircle className="w-4 h-4" />
-                  {errors.location}
+                {/* Editable Address */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Edit Address (Optional)
+                  </label>
+                  <Input
+                    value={formData.location.address}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        location: {
+                          ...formData.location,
+                          address: e.target.value,
+                        },
+                      })
+                    }
+                    placeholder="Enter specific address or landmark"
+                    className="border-gray-300 focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
-              )}
 
-              <div className="flex justify-end pt-4">
                 <Button
-                  onClick={handleNext}
-                  disabled={!markerPosition}
-                  className="px-8"
+                  variant="outline"
+                  onClick={getUserLocation}
+                  className="w-full"
+                  disabled={locationLoading}
                 >
-                  Next Step
+                  <Navigation size={16} className="mr-2" />
+                  Refresh Location
                 </Button>
+
+                {errors.location && (
+                  <p className="text-red-600 text-sm flex items-center gap-2">
+                    <AlertCircle size={16} />
+                    {errors.location}
+                  </p>
+                )}
               </div>
+            )}
+          </div>
+        );
+
+      case 2:
+        return (
+          <div className="space-y-6">
+            <div className="text-center mb-8">
+              <div className="bg-purple-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                <FileText className="text-purple-600" size={32} />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Category
+              </h2>
+              <p className="text-gray-600">What type of issue is it?</p>
             </div>
-          )}
 
-          {/* Step 2: Issue Type */}
-          {currentStep === 2 && (
-            <div className="space-y-6">
-              <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-slate-800 mb-2">
-                  What type of issue is it?
-                </h2>
-                <p className="text-slate-600">
-                  Select the category that best describes the problem
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {categories.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => {
+                    setFormData({ ...formData, issue_type: cat.id });
+                    setErrors({ ...errors, issue_type: null });
+                  }}
+                  className={`p-6 rounded-xl border-2 transition-all ${
+                    formData.issue_type === cat.id
+                      ? cat.color + " shadow-lg scale-105"
+                      : "border-gray-200 hover:border-gray-300 hover:shadow-md"
+                  }`}
+                >
+                  <div className="text-4xl mb-3">{cat.icon}</div>
+                  <p className="font-semibold text-gray-900">{cat.name}</p>
+                </button>
+              ))}
+            </div>
+
+            {errors.issue_type && (
+              <p className="text-red-600 text-sm flex items-center gap-2">
+                <AlertCircle size={16} />
+                {errors.issue_type}
+              </p>
+            )}
+          </div>
+        );
+
+      case 3:
+        return (
+          <div className="space-y-6">
+            <div className="text-center mb-8">
+              <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Camera className="text-green-600" size={32} />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Details & Photos
+              </h2>
+              <p className="text-gray-600">Describe the issue and add photos</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                Title *
+              </label>
+              <Input
+                value={formData.title}
+                onChange={(e) =>
+                  setFormData({ ...formData, title: e.target.value })
+                }
+                placeholder="e.g., Large pothole on Main Street"
+                className={`border-gray-300 focus:ring-2 focus:ring-blue-500 ${
+                  errors.title ? "border-red-500" : ""
+                }`}
+              />
+              {errors.title && (
+                <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                  <AlertCircle size={14} />
+                  {errors.title}
                 </p>
-              </div>
+              )}
+            </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {issueTypes.map((type) => (
-                  <button
-                    key={type.value}
-                    onClick={() => {
-                      setFormData((prev) => ({ ...prev, issueType: type.value }));
-                      setErrors((prev) => ({ ...prev, issueType: null }));
-                    }}
-                    className={`p-6 rounded-xl border-2 transition-all hover:scale-105 ${
-                      formData.issueType === type.value
-                        ? "border-blue-600 bg-blue-50 shadow-lg"
-                        : "border-slate-200 bg-white hover:border-blue-300"
-                    }`}
-                  >
-                    <div className="text-4xl mb-2">{type.icon}</div>
-                    <div className="text-sm font-medium text-slate-700">
-                      {type.label}
-                    </div>
-                  </button>
-                ))}
-              </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                Description * (min 20 characters)
+              </label>
+              <Textarea
+                value={formData.description}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
+                placeholder="Describe the issue in detail - location, size, impact on traffic, etc."
+                rows={5}
+                className={`border-gray-300 focus:ring-2 focus:ring-blue-500 ${
+                  errors.description ? "border-red-500" : ""
+                }`}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {formData.description.length} / 20 characters minimum
+              </p>
+              {errors.description && (
+                <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                  <AlertCircle size={14} />
+                  {errors.description}
+                </p>
+              )}
+            </div>
 
-              {errors.issueType && (
-                <div className="flex items-center gap-2 text-red-600 text-sm">
-                  <AlertCircle className="w-4 h-4" />
-                  {errors.issueType}
-                </div>
+            {/* Photo Upload */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                Photos (Optional, max 5)
+              </label>
+
+              {photoPreview.length < 5 && (
+                <label className="block">
+                  <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all">
+                    <Upload className="mx-auto text-gray-400 mb-2" size={32} />
+                    <p className="text-sm font-medium text-gray-700">
+                      Click to upload photos
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      JPG, PNG, WEBP up to 10MB each
+                    </p>
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp"
+                    multiple
+                    onChange={handlePhotoUpload}
+                    className="hidden"
+                  />
+                </label>
               )}
 
-              <div className="flex justify-between pt-4">
-                <Button onClick={handleBack} variant="outline">
-                  Back
-                </Button>
-                <Button onClick={handleNext} disabled={!formData.issueType}>
-                  Next Step
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Details and Photos */}
-          {currentStep === 3 && (
-            <div className="space-y-6">
-              <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-slate-800 mb-2">
-                  Describe the issue and add photos
-                </h2>
-                <p className="text-slate-600">
-                  Help us improve road infrastructure in your area
-                </p>
-              </div>
-
-              {/* Title Input */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Issue Title *
-                </label>
-                <Input
-                  placeholder="e.g., Large pothole on Main Street"
-                  value={formData.title}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, title: e.target.value }))
-                  }
-                  className={errors.title ? "border-red-500" : ""}
-                />
-                {errors.title && (
-                  <p className="text-red-600 text-sm mt-1">{errors.title}</p>
-                )}
-              </div>
-
-              {/* Description Textarea */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Detailed Description *
-                </label>
-                <Textarea
-                  placeholder="Provide details about the issue, its severity, and any safety concerns..."
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      description: e.target.value,
-                    }))
-                  }
-                  rows={5}
-                  className={errors.description ? "border-red-500" : ""}
-                />
-                {errors.description && (
-                  <p className="text-red-600 text-sm mt-1">
-                    {errors.description}
-                  </p>
-                )}
-              </div>
-
-              {/* Image Upload */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Photos (Optional, max 5)
-                </label>
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-blue-400 hover:bg-blue-50 transition-all cursor-pointer"
-                >
-                  <Upload className="w-12 h-12 text-slate-400 mx-auto mb-3" />
-                  <p className="text-slate-600 font-medium mb-1">
-                    Click to upload images
-                  </p>
-                  <p className="text-sm text-slate-500">
-                    JPG, PNG, or WEBP (max 10MB each)
-                  </p>
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept="image/jpeg,image/jpg,image/png,image/webp"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                />
-                {errors.images && (
-                  <p className="text-red-600 text-sm mt-1">{errors.images}</p>
-                )}
-              </div>
-
-              {/* Image Preview */}
-              {formData.images.length > 0 && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {formData.images.map((image, index) => (
+              {/* Photo Previews */}
+              {photoPreview.length > 0 && (
+                <div className="grid grid-cols-3 gap-4 mt-4">
+                  {photoPreview.map((preview, index) => (
                     <div key={index} className="relative group">
                       <img
-                        src={URL.createObjectURL(image)}
+                        src={preview}
                         alt={`Preview ${index + 1}`}
-                        className="w-full h-32 object-cover rounded-lg"
+                        className="w-full h-32 object-cover rounded-xl"
                       />
                       <button
-                        onClick={() => removeImage(index)}
-                        className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => removePhoto(index)}
+                        className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                       >
-                        <X className="w-4 h-4" />
+                        <X size={16} />
                       </button>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Anonymous Toggle */}
-              <div className="flex items-center gap-3 bg-slate-50 p-4 rounded-lg">
-                <input
-                  type="checkbox"
-                  id="anonymous"
-                  checked={formData.isAnonymous}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      isAnonymous: e.target.checked,
-                    }))
-                  }
-                  className="w-4 h-4"
-                />
-                <label htmlFor="anonymous" className="text-sm text-slate-700">
-                  Submit anonymously (your identity will not be shown)
-                </label>
-              </div>
-
-              {errors.submit && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-red-700">{errors.submit}</p>
-                </div>
+              {errors.images && (
+                <p className="text-red-600 text-sm mt-2 flex items-center gap-1">
+                  <AlertCircle size={14} />
+                  {errors.images}
+                </p>
               )}
-
-              <div className="flex justify-between pt-4">
-                <Button onClick={handleBack} variant="outline">
-                  Back
-                </Button>
-                <Button onClick={handleSubmit} disabled={submitting}>
-                  {submitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Submitting...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Submit Report
-                    </>
-                  )}
-                </Button>
-              </div>
             </div>
-          )}
-        </Card>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="space-y-6 max-w-3xl mx-auto">
+      {/* Header */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 p-8 text-white shadow-xl">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-5 rounded-full -mr-32 -mt-32"></div>
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-white opacity-5 rounded-full -ml-24 -mb-24"></div>
+
+        <div className="relative z-10">
+          <div className="flex items-center space-x-3 mb-2">
+            <AlertCircle size={32} />
+            <h1 className="text-3xl font-bold">Report an Issue</h1>
+          </div>
+          <p className="text-orange-100 text-lg">
+            Help us improve road infrastructure in your area
+          </p>
+        </div>
       </div>
+
+      {/* Progress Steps */}
+      <div className="flex items-center justify-between px-4">
+        {[1, 2, 3].map((step) => (
+          <div key={step} className="flex items-center flex-1">
+            <div
+              className={`flex items-center justify-center w-10 h-10 rounded-full border-2 font-bold transition-all ${
+                currentStep >= step
+                  ? "bg-blue-600 border-blue-600 text-white"
+                  : "bg-white border-gray-300 text-gray-400"
+              }`}
+            >
+              {currentStep > step ? <CheckCircle size={20} /> : step}
+            </div>
+            {step < 3 && (
+              <div
+                className={`flex-1 h-1 mx-2 transition-all ${
+                  currentStep > step ? "bg-blue-600" : "bg-gray-300"
+                }`}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Step Content */}
+      <Card className="p-8 border-0 shadow-lg">
+        {renderStepContent()}
+
+        {/* Error Message */}
+        {errors.submit && (
+          <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 flex items-center gap-3 mt-6">
+            <AlertCircle className="text-red-600" size={20} />
+            <p className="text-red-700 font-medium">{errors.submit}</p>
+          </div>
+        )}
+
+        {/* Navigation Buttons */}
+        <div className="flex gap-4 mt-8">
+          {currentStep > 1 && (
+            <Button
+              variant="outline"
+              onClick={handlePrevious}
+              className="flex-1"
+            >
+              Previous
+            </Button>
+          )}
+
+          {currentStep < 3 ? (
+            <Button
+              onClick={handleNext}
+              className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-700"
+              disabled={locationLoading}
+            >
+              Next
+            </Button>
+          ) : (
+            <Button
+              onClick={handleSubmit}
+              className="flex-1 bg-gradient-to-r from-green-600 to-green-700"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="animate-spin mr-2" size={18} />
+                  Submitting...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="mr-2" size={18} />
+                  Submit Report
+                </>
+              )}
+            </Button>
+          )}
+        </div>
+      </Card>
     </div>
   );
 };

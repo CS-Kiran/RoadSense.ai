@@ -18,7 +18,13 @@ import mimetypes
 from pathlib import Path
 
 
+# print("🗑️  Dropping all tables...")
+# Base.metadata.drop_all(bind=engine)
+
+print("🔨 Creating all tables from models...")
 Base.metadata.create_all(bind=engine)
+
+print("✅ Database setup complete!")
 
 app = FastAPI(title="RoadSense.ai API", version="1.0.0")
 
