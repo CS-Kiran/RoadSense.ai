@@ -739,7 +739,6 @@ async def get_report_history(
 @app.get("/api/reports/images/{filename}")
 async def get_report_image(
     filename: str,
-    current_user = Depends(auth.get_current_user)
 ):
     """Serve report image file"""
     from fastapi.responses import FileResponse

@@ -1,7 +1,5 @@
-// src/components/citizen/ReportDetailPage.jsx
-
 import React, { useState, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   MapPin,
@@ -17,66 +15,111 @@ import {
   Eye,
   TrendingUp,
   XCircle,
+  Trash2,
+  X,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import axios from "@/api/axios";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 
 const ReportDetailPage = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
+  const { toast } = useToast();
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [history, setHistory] = useState([]);
   const [comment, setComment] = useState("");
-  const [rating, setRating] = useState(0);
-  const [showRating, setShowRating] = useState(false);
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchReportDetails();
+    fetchReportHistory();
   }, [id]);
 
   const fetchReportDetails = async () => {
     try {
-      const response = await axios.get(`/api/reports/${id}`);
+      const response = await axios.get(`http://localhost:8000/api/reports/${id}`);
       setReport(response.data);
-      
-      // Show rating if report is resolved
-      if (response.data.status === "resolved" && !response.data.user_rating) {
-        setShowRating(true);
-      }
     } catch (error) {
       console.error("Error fetching report:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load report details",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddComment = async () => {
-    if (!comment.trim()) return;
-
+  const fetchReportHistory = async () => {
     try {
-      await axios.post(`/api/reports/${id}/comments`, {
-        comment: comment,
-        is_internal: false,
-      });
-      setComment("");
-      fetchReportDetails();
+      const response = await axios.get(`http://localhost:8000/api/reports/${id}/history`);
+      setHistory(response.data);
     } catch (error) {
-      console.error("Error adding comment:", error);
+      console.error("Error fetching history:", error);
     }
   };
 
-  const handleRating = async (value) => {
+  const handleCloseReport = async () => {
+    if (!window.confirm("Are you sure you want to close this report?")) return;
+
     try {
-      await axios.post(`/api/reports/${id}/rate`, {
-        rating: value,
+      await axios.patch(`http://localhost:8000/api/reports/${id}/close`, {
+        comment: "Report closed by user",
       });
-      setRating(value);
-      setShowRating(false);
+      toast({
+        title: "Success",
+        description: "Report closed successfully",
+      });
       fetchReportDetails();
+      fetchReportHistory();
     } catch (error) {
-      console.error("Error submitting rating:", error);
+      console.error("Error closing report:", error);
+      toast({
+        title: "Error",
+        description: error.response?.data?.detail || "Failed to close report",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteReport = async () => {
+    setDeleting(true);
+    try {
+      await axios.delete(`http://localhost:8000/api/reports/${id}`);
+      toast({
+        title: "Success",
+        description: "Report deleted successfully",
+      });
+      navigate("/citizen/my-reports");
+    } catch (error) {
+      console.error("Error deleting report:", error);
+      toast({
+        title: "Error",
+        description:
+          error.response?.data?.detail ||
+          "Failed to delete report. You can only delete reports within 24 hours of creation.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+      setShowDeleteDialog(false);
     }
   };
 
@@ -150,6 +193,14 @@ const ReportDetailPage = () => {
     return colors[priority] || colors.medium;
   };
 
+  const canDeleteReport = () => {
+    if (!report) return false;
+    const createdAt = new Date(report.created_at);
+    const now = new Date();
+    const hoursSinceCreation = (now - createdAt) / (1000 * 60 * 60);
+    return hoursSinceCreation < 24;
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center">
@@ -188,13 +239,30 @@ const ReportDetailPage = () => {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 py-8 px-4">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="mb-6">
-          <Link to="/citizen/my-reports">
-            <Button variant="outline" className="mb-4">
+        <div className="mb-6 flex items-center justify-between">
+          <Link to="/citizen/reports">
+            <Button variant="outline">
               <ArrowLeft className="mr-2" size={18} />
               Back to Reports
             </Button>
           </Link>
+          <div className="flex gap-2">
+            {report.status !== "closed" && (
+              <Button variant="outline" onClick={handleCloseReport}>
+                <XCircle className="mr-2" size={18} />
+                Close Report
+              </Button>
+            )}
+            {canDeleteReport() && (
+              <Button
+                variant="destructive"
+                onClick={() => setShowDeleteDialog(true)}
+              >
+                <Trash2 className="mr-2" size={18} />
+                Delete
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Main Content */}
@@ -284,6 +352,7 @@ const ReportDetailPage = () => {
                       <div
                         key={image.id}
                         className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-gray-200 hover:border-blue-500 transition-all"
+                        onClick={() => setSelectedImage(image)}
                       >
                         <img
                           src={`${axios.defaults.baseURL}/api/reports/images/${image.filename}`}
@@ -303,97 +372,44 @@ const ReportDetailPage = () => {
               )}
             </Card>
 
-            {/* Comments Section */}
-            <Card className="p-6 shadow-lg">
-              <h3 className="font-semibold text-gray-800 mb-4 text-lg flex items-center">
-                <MessageSquare className="mr-2 text-blue-600" size={20} />
-                Comments & Updates
-              </h3>
-
-              {/* Comment List */}
-              <div className="space-y-4 mb-6">
-                {report.comments && report.comments.length > 0 ? (
-                  report.comments.map((comment) => (
-                    <div
-                      key={comment.id}
-                      className={`p-4 rounded-lg border-2 ${
-                        comment.is_internal || comment.user_role === "official"
-                          ? "bg-blue-50 border-blue-200"
-                          : "bg-gray-50 border-gray-200"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center space-x-2">
-                          <User className="text-gray-500" size={16} />
-                          <span className="font-medium text-gray-800">
-                            {comment.user_role === "official" ? (
-                              <>
-                                <Badge className="bg-blue-600 text-white text-xs mr-2">
-                                  Official
-                                </Badge>
-                                Official Response
-                              </>
-                            ) : (
-                              "User"
-                            )}
-                          </span>
-                        </div>
-                        <span className="text-xs text-gray-500">
-                          {new Date(comment.created_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <p className="text-gray-700 text-sm">{comment.comment}</p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-gray-500 text-center py-8">
-                    No comments yet. Be the first to add one!
-                  </p>
-                )}
-              </div>
-
-              {/* Add Comment */}
-              <div className="border-t pt-4">
-                <Textarea
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  placeholder="Add a comment or update..."
-                  rows={3}
-                  className="w-full mb-3"
-                />
-                <Button
-                  onClick={handleAddComment}
-                  disabled={!comment.trim()}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  <MessageSquare className="mr-2" size={18} />
-                  Add Comment
-                </Button>
-              </div>
-            </Card>
-
-            {/* Rating Section */}
-            {showRating && (
-              <Card className="p-6 shadow-lg bg-gradient-to-r from-green-50 to-blue-50 border-2 border-green-200">
-                <h3 className="font-semibold text-gray-800 mb-3 text-lg">
-                  How satisfied are you with how this issue was resolved?
+            {/* Status History */}
+            {history.length > 0 && (
+              <Card className="p-6 shadow-lg">
+                <h3 className="font-semibold text-gray-800 mb-4 text-lg flex items-center">
+                  <Clock className="mr-2 text-blue-600" size={20} />
+                  Status History
                 </h3>
-                <div className="flex space-x-2">
-                  {[1, 2, 3, 4, 5].map((value) => (
-                    <button
-                      key={value}
-                      onClick={() => handleRating(value)}
-                      className="p-2 hover:scale-110 transition-transform"
+                <div className="space-y-4">
+                  {history.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-start space-x-3 pb-4 border-b last:border-b-0"
                     >
-                      <Star
-                        size={32}
-                        className={
-                          value <= rating
-                            ? "text-yellow-400 fill-yellow-400"
-                            : "text-gray-300"
-                        }
-                      />
-                    </button>
+                      <div className="bg-blue-100 rounded-full p-2 mt-1">
+                        <Clock className="text-blue-600" size={16} />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="font-medium text-gray-800">
+                            {entry.old_status && (
+                              <>
+                                {entry.old_status.replace(/_/g, " ")} →{" "}
+                              </>
+                            )}
+                            {entry.new_status.replace(/_/g, " ").toUpperCase()}
+                          </p>
+                          <Badge className="bg-blue-600 text-white text-xs">
+                            {entry.changed_by_role}
+                          </Badge>
+                        </div>
+                        {entry.comment && (
+                          <p className="text-sm text-gray-600 mb-1">{entry.comment}</p>
+                        )}
+                        <p className="text-xs text-gray-500">
+                          {new Date(entry.created_at).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </Card>
@@ -419,6 +435,12 @@ const ReportDetailPage = () => {
                   <Badge className={`${getPriorityColor(report.priority)} border`}>
                     {getPriorityLabel(report.priority)}
                   </Badge>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">Anonymous Report</p>
+                  <p className="font-medium text-gray-800">
+                    {report.is_anonymous ? "Yes" : "No"}
+                  </p>
                 </div>
                 {report.assigned_to && (
                   <div>
@@ -495,20 +517,64 @@ const ReportDetailPage = () => {
                 )}
               </div>
             </Card>
-
-            {/* Map Preview */}
-            <Card className="p-6 shadow-lg">
-              <h3 className="font-semibold text-gray-800 mb-3 text-lg">
-                Location Map
-              </h3>
-              <div className="bg-gray-200 rounded-lg h-48 flex items-center justify-center">
-                <MapPin className="text-gray-400" size={48} />
-              </div>
-              <p className="text-xs text-gray-600 mt-2">{report.address}</p>
-            </Card>
           </div>
         </div>
       </div>
+
+      {/* Image Modal */}
+      {selectedImage && (
+        <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>Report Image</DialogTitle>
+            </DialogHeader>
+            <img
+              src={`${axios.defaults.baseURL}/api/reports/images/${selectedImage.filename}`}
+              alt="Report"
+              className="w-full h-auto rounded-lg"
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Report</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this report? This action cannot be undone.
+              Reports can only be deleted within 24 hours of creation.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteReport}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="mr-2 animate-spin" size={16} />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="mr-2" size={16} />
+                  Delete
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

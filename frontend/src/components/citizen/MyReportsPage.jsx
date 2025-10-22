@@ -11,7 +11,9 @@ import {
   FileText,
   TrendingUp,
   AlertCircle,
-  X
+  X,
+  Camera, // Added Camera icon
+  CheckCircle // Added for Resolved/Closed
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -29,7 +31,7 @@ const MyReportsPage = () => {
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 10,
-    total: 0
+    total: 0 // This will be estimated
   });
 
   useEffect(() => {
@@ -39,17 +41,34 @@ const MyReportsPage = () => {
   const fetchReports = async () => {
     setLoading(true);
     try {
+      const skip = (pagination.page - 1) * pagination.limit;
+      
       const params = new URLSearchParams({
-        page: pagination.page,
+        skip: skip,
         limit: pagination.limit,
-        ...(filters.status !== 'all' && { status: filters.status }),
-        ...(filters.category !== 'all' && { category: filters.category }),
-        ...(filters.search && { search: filters.search })
+        ...(filters.status !== 'all' && { status_filter: filters.status }),
+        ...(filters.category !== 'all' && { issue_type: filters.category }),
+        // 'search' is not supported by the /api/reports endpoint in main.py, so it's omitted
       });
 
-      const response = await axios.get(`/reports?${params}`);
-      setReports(response.data.data || []);
-      setPagination(prev => ({ ...prev, total: response.data.total || 0 }));
+      // FIX 1: Added /api/ prefix
+      // FIX 2: Switched to 'skip' and correct filter names
+      const response = await axios.get(`/api/reports?${params}`);
+      
+      // FIX 3: Handle list response (response.data is the list)
+      setReports(response.data || []);
+
+      // FIX 4: Hack to make pagination work without a 'total' count from API
+      let totalCount = 0;
+      if (response.data.length < pagination.limit) {
+        // This is the last page
+        totalCount = skip + response.data.length;
+      } else {
+        // There might be more pages, enable the "Next" button
+        totalCount = skip + response.data.length + 1;
+      }
+      setPagination(prev => ({ ...prev, total: totalCount }));
+
     } catch (error) {
       console.error('Error fetching reports:', error);
     } finally {
@@ -58,18 +77,19 @@ const MyReportsPage = () => {
   };
 
   const getStatusConfig = (status) => {
+    // FIX 5: Updated to match main.py ReportStatus enum
     const configs = {
       pending: {
         color: 'bg-amber-100 text-amber-700 border-amber-200',
         dot: 'bg-amber-500',
         icon: Clock
       },
-      acknowledged: {
+      under_review: {
         color: 'bg-blue-100 text-blue-700 border-blue-200',
         dot: 'bg-blue-500',
         icon: AlertCircle
       },
-      inprogress: {
+      in_progress: {
         color: 'bg-purple-100 text-purple-700 border-purple-200',
         dot: 'bg-purple-500',
         icon: TrendingUp
@@ -77,7 +97,12 @@ const MyReportsPage = () => {
       resolved: {
         color: 'bg-green-100 text-green-700 border-green-200',
         dot: 'bg-green-500',
-        icon: Clock
+        icon: CheckCircle
+      },
+      closed: {
+        color: 'bg-gray-100 text-gray-700 border-gray-200',
+        dot: 'bg-gray-500',
+        icon: CheckCircle
       },
       rejected: {
         color: 'bg-red-100 text-red-700 border-red-200',
@@ -93,6 +118,12 @@ const MyReportsPage = () => {
   };
 
   const hasActiveFilters = filters.status !== 'all' || filters.category !== 'all' || filters.search !== '';
+
+  // Helper for text formatting
+  const formatLabel = (label) => {
+    if (!label) return '';
+    return label.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  };
 
   return (
     <div className="space-y-6">
@@ -138,42 +169,49 @@ const MyReportsPage = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Search */}
+          {/* Search (Note: Not supported by backend endpoint) */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
             <input
               type="text"
-              placeholder="Search by ID or location..."
+              placeholder="Search (not implemented in API)"
               value={filters.search}
               onChange={(e) => setFilters({ ...filters, search: e.target.value })}
               className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              disabled={true} // Disabled as backend doesn't support it
             />
           </div>
 
-          {/* Status Filter */}
+          {/* Status Filter - FIX 6: Updated options */}
           <select
             value={filters.status}
             onChange={(e) => setFilters({ ...filters, status: e.target.value })}
             className="px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
           >
             <option value="all">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="acknowledged">Acknowledged</option>
-            <option value="inprogress">In Progress</option>
-            <option value="resolved">Resolved</option>
+            <option value="PENDING">Pending</option>
+            <option value="UNDER_REVIEW">Under Review</option>
+            <option value="IN_PROGRESS">In Progress</option>
+            <option value="RESOLVED">Resolved</option>
+            <option value="CLOSED">Closed</option>
+            <option value="REJECTED">Rejected</option>
           </select>
 
-          {/* Category Filter */}
+          {/* Category Filter - FIX 7: Updated options */}
           <select
             value={filters.category}
             onChange={(e) => setFilters({ ...filters, category: e.target.value })}
             className="px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
           >
             <option value="all">All Categories</option>
-            <option value="pothole">Pothole</option>
-            <option value="crack">Crack</option>
-            <option value="flooding">Flooding</option>
-            <option value="signage">Signage</option>
+            <option value="POTHOLE">Pothole</option>
+            <option value="CRACK">Crack</option>
+            <option value="DEBRIS">Debris</option>
+            <option value="FADED_MARKING">Faded Marking</option>
+            <option value="STREET_LIGHT">Street Light</option>
+            <option value="TRAFFIC_SIGN">Traffic Sign</option>
+            <option value="DRAINAGE">Drainage</option>
+            <option value="OTHER">Other</option>
           </select>
         </div>
       </Card>
@@ -204,6 +242,7 @@ const MyReportsPage = () => {
         </Card>
       ) : (
         <div className="space-y-4">
+          {/* FIX 8: Updated report card to use correct data fields */}
           {reports.map((report) => {
             const statusConfig = getStatusConfig(report.status);
             const StatusIcon = statusConfig.icon;
@@ -216,14 +255,14 @@ const MyReportsPage = () => {
                       {/* Header */}
                       <div className="flex items-center space-x-3 mb-3">
                         <span className="font-bold text-lg text-gray-900 group-hover:text-blue-600 transition-colors">
-                          {report.reportnumber}
+                          Report #{report.id}
                         </span>
                         <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${statusConfig.color}`}>
-                          <span className={`w-2 h-2 rounded-full ${statusConfig.dot} mr-2 animate-pulse`}></span>
-                          {report.status.toUpperCase()}
+                          <span className={`w-2 h-2 rounded-full ${statusConfig.dot} mr-2`}></span>
+                          {formatLabel(report.status)}
                         </div>
                         <Badge variant="outline" className="text-xs">
-                          {report.categoryname}
+                          {formatLabel(report.issue_type)}
                         </Badge>
                       </div>
 
@@ -232,38 +271,43 @@ const MyReportsPage = () => {
                         {report.title}
                       </h3>
 
-                      {/* Description */}
-                      <p className="text-sm text-gray-600 mb-4 line-clamp-2">
+                      {/* Description (Not available in list view from main.py) */}
+                      {/* <p className="text-sm text-gray-600 mb-4 line-clamp-2">
                         {report.description}
-                      </p>
+                      </p> */}
 
                       {/* Meta Info */}
-                      <div className="flex items-center space-x-6 text-sm text-gray-500">
+                      <div className="flex flex-col md:flex-row md:items-center md:space-x-6 text-sm text-gray-500 space-y-2 md:space-y-0">
                         <span className="flex items-center">
                           <MapPin size={14} className="mr-1 text-blue-600" />
                           {report.address?.substring(0, 50)}...
                         </span>
                         <span className="flex items-center">
                           <Clock size={14} className="mr-1 text-purple-600" />
-                          {new Date(report.createdat).toLocaleDateString()}
+                          {new Date(report.created_at).toLocaleDateString()}
                         </span>
-                        <span className="flex items-center">
-                          <Eye size={14} className="mr-1 text-green-600" />
-                          {report.viewcount || 0} views
-                        </span>
+                        {/* 'viewcount' is not in the list response, so it's removed */}
                       </div>
                     </div>
 
-                    {/* Thumbnail */}
-                    {report.reportmedia && report.reportmedia[0] && (
-                      <div className="ml-6">
-                        <img
-                          src={report.reportmedia[0].thumbnailurl || report.reportmedia[0].fileurl}
-                          alt="Report"
-                          className="w-32 h-32 object-cover rounded-xl shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all"
-                        />
-                      </div>
-                    )}
+                    {/* Image Count (replaces thumbnail) */}
+                    <div className="ml-6 flex flex-col items-center justify-center w-24 h-24 md:w-32 md:h-32 bg-gray-50 rounded-xl shadow-inner group-hover:shadow-md transition-all">
+                      {report.image_count > 0 ? (
+                        <>
+                          <Camera size={32} className="text-gray-500 mb-2" />
+                          <span className="font-bold text-gray-700">{report.image_count}</span>
+                          <span className="text-xs text-gray-500">
+                            {report.image_count > 1 ? 'images' : 'image'}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Camera size={32} className="text-gray-400 mb-2" />
+                          <span className="text-xs text-gray-500">No images</span>
+                        </>
+                      )}
+                    </div>
+
                   </div>
                 </Card>
               </Link>
@@ -273,11 +317,13 @@ const MyReportsPage = () => {
       )}
 
       {/* Pagination */}
-      {pagination.total > pagination.limit && (
+      {/* Show pagination controls if on page > 1 OR if total is more than limit */}
+      {(pagination.page > 1 || pagination.total > pagination.limit) && (
         <Card className="p-4 border-0 shadow-lg">
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-600">
-              Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} reports
+              Page {pagination.page}
+              {/* Showing 1 to 10 of {pagination.total} reports */}
             </p>
             <div className="flex space-x-2">
               <Button
@@ -289,12 +335,13 @@ const MyReportsPage = () => {
                 Previous
               </Button>
               <div className="flex items-center px-4 py-2 bg-blue-50 text-blue-600 font-semibold rounded-lg">
-                Page {pagination.page} of {Math.ceil(pagination.total / pagination.limit)}
+                Page {pagination.page}
+                {/* {pagination.total > 0 && ` of ${Math.ceil(pagination.total / pagination.limit)}`} */}
               </div>
               <Button
                 variant="outline"
                 onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-                disabled={pagination.page >= Math.ceil(pagination.total / pagination.limit)}
+                disabled={pagination.total <= (pagination.page * pagination.limit)} // Disable if total is reached
                 className="hover:bg-blue-50 hover:text-blue-600 hover:border-blue-500"
               >
                 Next
