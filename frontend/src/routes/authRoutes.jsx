@@ -1,8 +1,7 @@
 import LoginPage from "@/components/auth/Login";
 import UserRegister from "@/components/auth/UserRegister";
 import OfficialRegister from "@/components/auth/OfficialRegister";
-import Dashboard from "@/pages/Dashboard";
-import ProtectedRoute from "@/components/ProtectedRoute";
+import AdminLogin from "@/components/auth/AdminLogin";
 
 export const authRoutes = [
   {
@@ -17,11 +16,8 @@ export const authRoutes = [
     ],
   },
   {
-    path: "/dashboard",
-    element: (
-      <ProtectedRoute>
-        <Dashboard />
-      </ProtectedRoute>
-    ),
+    path: '/admin/login',
+    element: <AdminLogin />,
+    protected: false,
   },
 ];

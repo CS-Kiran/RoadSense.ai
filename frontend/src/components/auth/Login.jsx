@@ -40,12 +40,17 @@ export default function LoginPage() {
       const data = await response.json();
 
       if (response.ok) {
+        // Store token via AuthContext
         login(data.access_token);
 
+        // Store additional data in localStorage
         localStorage.setItem("user_role", data.role);
+        localStorage.setItem("user_id", data.user_id || data.id); // Add user_id
 
+        // Fetch and store user info
         await fetchUserInfo(data.access_token);
 
+        // Navigate based on role
         switch (data.role) {
           case "citizen":
             navigate("/citizen/dashboard");
@@ -70,25 +75,22 @@ export default function LoginPage() {
     }
   };
 
-  // Function to fetch user information
+  // Make sure fetchUserInfo stores user_id
   const fetchUserInfo = async (token) => {
     try {
-      const response = await fetch("http://localhost:8000/api/users/me", {
-        method: "GET",
+      const response = await fetch("http://localhost:8000/api/user/profile", {
         headers: {
           Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
         },
       });
 
-      const userData = await response.json();
-
       if (response.ok) {
-        // Store user info
+        const userData = await response.json();
         localStorage.setItem("user_info", JSON.stringify(userData));
+        localStorage.setItem("user_id", userData.id); // Ensure user_id is stored
       }
     } catch (error) {
-      console.error("Failed to fetch user info:", error);
+      console.error("Error fetching user info:", error);
     }
   };
 

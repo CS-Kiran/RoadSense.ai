@@ -19,6 +19,7 @@ from pathlib import Path
 from math import radians, cos, sin, asin, sqrt
 from datetime import datetime, timedelta
 from typing import Dict
+from sqlalchemy import text
 
 
 # print("🗑️  Dropping all tables...")
@@ -1265,6 +1266,914 @@ async def get_profile_image(filename: str):
         )
     
     return FileResponse(file_path)
+
+@app.post("/api/admin/login")
+async def admin_login(
+    login_data: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    Simple admin login - checks credentials against admin table
+    No JWT tokens, just plain validation
+    """
+    try:
+        username = login_data.get("username")
+        password = login_data.get("password")
+        
+        if not username or not password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username and password are required"
+            )
+        
+        # Query admin table directly
+        result = db.execute(
+            text("SELECT id, username, created_at FROM admin WHERE username = :username AND password = :password LIMIT 1"),
+            {"username": username, "password": password}
+        )
+        admin_row = result.fetchone()
+        
+        if admin_row:
+            # Successful login
+            return {
+                "success": True,
+                "message": "Login successful",
+                "role": "admin",
+                "user": {
+                    "id": admin_row.id,
+                    "username": admin_row.username,
+                    "full_name": "Administrator",
+                    "email": f"{admin_row.username}@roadsense.ai",
+                    "role": "admin",
+                    "created_at": str(admin_row.created_at)
+                }
+            }
+        
+        # Invalid credentials
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Admin login error: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Login failed. Please try again."
+        )
+
+
+# Logout endpoint (optional - just clears session on frontend)
+@app.post("/api/admin/logout")
+async def admin_logout():
+    """Admin logout - no server-side session to clear"""
+    return {"success": True, "message": "Logged out successfully"}
+
+
+# Statistics endpoint - no authentication
+@app.get("/api/admin/statistics")
+async def get_admin_statistics(db: Session = Depends(get_db)):
+    """
+    Get admin statistics - no authentication required
+    Frontend checks admin_logged_in flag
+    """
+    try:
+        # User statistics
+        total_citizens = db.query(models.User).filter(
+            models.User.role == models.UserRole.CITIZEN
+        ).count()
+        
+        # Officials statistics
+        try:
+            total_officials = db.query(models.Official).count()
+            active_officials = db.query(models.Official).filter(
+                models.Official.account_status == models.AccountStatus.ACTIVE
+            ).count()
+            pending_officials = db.query(models.Official).filter(
+                models.Official.account_status == models.AccountStatus.PENDING
+            ).count()
+        except Exception as e:
+            print(f"Error querying officials: {e}")
+            total_officials = 0
+            active_officials = 0
+            pending_officials = 0
+        
+        # Report statistics
+        try:
+            total_reports = db.query(models.Report).count()
+            pending_reports = db.query(models.Report).filter(
+                models.Report.status == models.ReportStatus.PENDING
+            ).count()
+            in_progress_reports = db.query(models.Report).filter(
+                models.Report.status == models.ReportStatus.IN_PROGRESS
+            ).count()
+            resolved_reports = db.query(models.Report).filter(
+                models.Report.status == models.ReportStatus.RESOLVED
+            ).count()
+        except Exception as e:
+            print(f"Error querying reports: {e}")
+            total_reports = 0
+            pending_reports = 0
+            in_progress_reports = 0
+            resolved_reports = 0
+        
+        return {
+            "users": {
+                "citizens": total_citizens,
+                "officials": total_officials,
+                "active_officials": active_officials,
+                "pending_officials": pending_officials
+            },
+            "reports": {
+                "total": total_reports,
+                "pending": pending_reports,
+                "in_progress": in_progress_reports,
+                "resolved": resolved_reports
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Error getting statistics: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        # Return default values instead of error
+        return {
+            "users": {
+                "citizens": 0,
+                "officials": 0,
+                "active_officials": 0,
+                "pending_officials": 0
+            },
+            "reports": {
+                "total": 0,
+                "pending": 0,
+                "in_progress": 0,
+                "resolved": 0
+            }
+        }
+
+
+# ==================== ADMIN USER MANAGEMENT ====================
+
+@app.get("/api/admin/users")
+async def get_all_users(
+    role: Optional[str] = None,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all users (citizens and officials combined)
+    No authentication - simple admin access
+    """
+    try:
+        all_users = []
+        
+        # Get Citizens
+        citizen_query = db.query(models.User)
+        
+        if role and role != "official":
+            if role == "citizen":
+                citizen_query = citizen_query.filter(models.User.role == models.UserRole.CITIZEN)
+            elif role == "admin":
+                citizen_query = citizen_query.filter(models.User.role == models.UserRole.ADMIN)
+        
+        if status:
+            status_enum = getattr(models.AccountStatus, status.upper(), None)
+            if status_enum:
+                citizen_query = citizen_query.filter(models.User.account_status == status_enum)
+        
+        if search:
+            citizen_query = citizen_query.filter(
+                (models.User.full_name.ilike(f"%{search}%")) |
+                (models.User.email.ilike(f"%{search}%"))
+            )
+        
+        citizens = citizen_query.all()
+        
+        # Convert citizens to dict format
+        for citizen in citizens:
+            all_users.append({
+                "id": citizen.id,
+                "full_name": citizen.full_name,
+                "email": citizen.email,
+                "role": citizen.role.value if hasattr(citizen.role, 'value') else citizen.role,
+                "account_status": citizen.account_status.value if hasattr(citizen.account_status, 'value') else citizen.account_status,
+                "is_active": citizen.is_active if hasattr(citizen, 'is_active') else True,
+                "phone_number": getattr(citizen, 'phone_number', None),
+                "created_at": str(citizen.created_at),
+                "user_type": "user"
+            })
+        
+        # Get Officials
+        if not role or role == "official":
+            official_query = db.query(models.Official)
+            
+            if status:
+                status_enum = getattr(models.AccountStatus, status.upper(), None)
+                if status_enum:
+                    official_query = official_query.filter(models.Official.account_status == status_enum)
+            
+            if search:
+                official_query = official_query.filter(
+                    (models.Official.full_name.ilike(f"%{search}%")) |
+                    (models.Official.email.ilike(f"%{search}%"))
+                )
+            
+            officials = official_query.all()
+            
+            # Convert officials to dict format
+            for official in officials:
+                all_users.append({
+                    "id": official.id,
+                    "full_name": official.full_name,
+                    "email": official.email,
+                    "role": "official",
+                    "account_status": official.account_status.value if hasattr(official.account_status, 'value') else official.account_status,
+                    "is_active": official.is_active if hasattr(official, 'is_active') else True,
+                    "phone_number": getattr(official, 'phone_number', None),
+                    "department": getattr(official, 'department', None),
+                    "designation": getattr(official, 'designation', None),
+                    "created_at": str(official.created_at),
+                    "user_type": "official"
+                })
+        
+        # Apply pagination
+        total = len(all_users)
+        paginated_users = all_users[offset:offset + limit]
+        
+        return {
+            "users": paginated_users,
+            "total": total
+        }
+        
+    except Exception as e:
+        print(f"❌ Error fetching users: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return {"users": [], "total": 0}
+
+
+@app.get("/api/admin/users/{user_id}")
+async def get_user_details(
+    user_id: int,
+    user_type: str = "user",
+    db: Session = Depends(get_db)
+):
+    """Get detailed user information"""
+    try:
+        if user_type == "official":
+            user = db.query(models.Official).filter(
+                models.Official.id == user_id
+            ).first()
+        else:
+            user = db.query(models.User).filter(
+                models.User.id == user_id
+            ).first()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Get user statistics
+        try:
+            total_reports = db.query(models.Report).filter(
+                models.Report.citizen_id == user_id
+            ).count()
+            
+            pending_reports = db.query(models.Report).filter(
+                models.Report.citizen_id == user_id,
+                models.Report.status == models.ReportStatus.PENDING
+            ).count()
+            
+            resolved_reports = db.query(models.Report).filter(
+                models.Report.citizen_id == user_id,
+                models.Report.status == models.ReportStatus.RESOLVED
+            ).count()
+            
+            statistics = {
+                "total_reports": total_reports,
+                "pending_reports": pending_reports,
+                "resolved_reports": resolved_reports
+            }
+        except:
+            statistics = {
+                "total_reports": 0,
+                "pending_reports": 0,
+                "resolved_reports": 0
+            }
+        
+        # Convert user object to dict
+        user_dict = {
+            "id": user.id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "role": user.role.value if hasattr(user.role, 'value') else "official",
+            "account_status": user.account_status.value if hasattr(user.account_status, 'value') else user.account_status,
+            "is_active": user.is_active if hasattr(user, 'is_active') else True,
+            "created_at": str(user.created_at),
+            "phone_number": getattr(user, 'phone_number', None),
+            "statistics": statistics
+        }
+        
+        # Add official-specific fields
+        if user_type == "official":
+            user_dict.update({
+                "employee_id": getattr(user, 'employee_id', None),
+                "department": getattr(user, 'department', None),
+                "designation": getattr(user, 'designation', None),
+                "zone": getattr(user, 'zone', None),
+                "government_id_url": getattr(user, 'government_id_url', None)
+            })
+        
+        return user_dict
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error fetching user details: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch user details"
+        )
+
+
+@app.patch("/api/admin/users/{user_id}/status")
+async def update_user_status(
+    user_id: int,
+    status_data: dict,
+    user_type: str = "user",
+    db: Session = Depends(get_db)
+):
+    """
+    Update user account status and is_active flag
+    """
+    try:
+        new_status = status_data.get("account_status")
+        
+        # Get the user
+        if user_type == "official":
+            user = db.query(models.Official).filter(
+                models.Official.id == user_id
+            ).first()
+        else:
+            user = db.query(models.User).filter(
+                models.User.id == user_id
+            ).first()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Update status
+        if new_status == "active":
+            user.account_status = models.AccountStatus.ACTIVE
+            # Set is_active to True when activating
+            if hasattr(user, 'is_active'):
+                user.is_active = True
+        elif new_status == "suspended":
+            user.account_status = models.AccountStatus.SUSPENDED
+            # Set is_active to False when suspending
+            if hasattr(user, 'is_active'):
+                user.is_active = False
+        elif new_status == "blocked":
+            user.account_status = models.AccountStatus.BLOCKED
+            # Set is_active to False when blocking
+            if hasattr(user, 'is_active'):
+                user.is_active = False
+        elif new_status == "pending":
+            user.account_status = models.AccountStatus.PENDING
+            # Set is_active to False when pending
+            if hasattr(user, 'is_active'):
+                user.is_active = False
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid status. Use: active, suspended, blocked, or pending"
+            )
+        
+        db.commit()
+        db.refresh(user)
+        
+        print(f"✅ Updated user {user_id}: status={new_status}, is_active={getattr(user, 'is_active', 'N/A')}")
+        
+        return {
+            "success": True,
+            "message": f"User status updated to {new_status}",
+            "user": {
+                "id": user.id,
+                "account_status": user.account_status.value if hasattr(user.account_status, 'value') else user.account_status,
+                "is_active": user.is_active if hasattr(user, 'is_active') else True
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error updating user status: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update user status"
+        )
+
+# Get pending officials
+@app.get("/api/admin/officials/pending")
+async def get_pending_officials(db: Session = Depends(get_db)):
+    """Get pending officials - no authentication"""
+    try:
+        officials = db.query(models.Official).filter(
+            models.Official.account_status == models.AccountStatus.PENDING
+        ).all()
+        return officials
+    except Exception as e:
+        print(f"❌ Error fetching pending officials: {str(e)}")
+        return []
+
+
+# Verify official
+@app.patch("/api/admin/officials/{official_id}/verify")
+async def verify_official(
+    official_id: int,
+    action_data: dict,
+    db: Session = Depends(get_db)
+):
+    """Verify or reject an official"""
+    try:
+        action = action_data.get("action")  # 'approve' or 'reject'
+        
+        official = db.query(models.Official).filter(
+            models.Official.id == official_id
+        ).first()
+        
+        if not official:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Official not found"
+            )
+        
+        if action == "approve":
+            official.account_status = models.AccountStatus.ACTIVE
+            message = "Official approved successfully"
+        elif action == "reject":
+            official.account_status = models.AccountStatus.REJECTED
+            message = "Official rejected"
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid action"
+            )
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": message,
+            "official": official
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error verifying official: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify official"
+        )
+
+
+# ==================== ADMIN REPORTS MANAGEMENT ====================
+
+@app.get("/api/admin/reports")
+async def get_all_reports(
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    issue_type: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all reports with filters for admin
+    No authentication - simple admin access
+    """
+    try:
+        query = db.query(models.Report)
+        
+        # Apply filters
+        if status:
+            status_enum = getattr(models.ReportStatus, status.upper(), None)
+            if status_enum:
+                query = query.filter(models.Report.status == status_enum)
+        
+        if priority:
+            priority_enum = getattr(models.ReportPriority, priority.upper(), None)
+            if priority_enum:
+                query = query.filter(models.Report.priority == priority_enum)
+        
+        if issue_type:
+            issue_enum = getattr(models.IssueType, issue_type.upper(), None)
+            if issue_enum:
+                query = query.filter(models.Report.issue_type == issue_enum)
+        
+        if search:
+            query = query.filter(
+                (models.Report.title.ilike(f"%{search}%")) |
+                (models.Report.description.ilike(f"%{search}%")) |
+                (models.Report.address.ilike(f"%{search}%"))
+            )
+        
+        total = query.count()
+        reports = query.order_by(models.Report.created_at.desc()).offset(offset).limit(limit).all()
+        
+        # Convert to dict format with user info
+        reports_list = []
+        for report in reports:
+            # Get user (citizen) info
+            user = None
+            if report.user_id:
+                user = db.query(models.User).filter(
+                    models.User.id == report.user_id
+                ).first()
+            
+            # Get assigned official info
+            assigned_official = None
+            if report.assigned_to:
+                assigned_official = db.query(models.Official).filter(
+                    models.Official.id == report.assigned_to
+                ).first()
+            
+            # Get images
+            images = db.query(models.ReportImage).filter(
+                models.ReportImage.report_id == report.id
+            ).all()
+            
+            image_urls = [img.file_path for img in images] if images else []
+            
+            # Get comments count
+            comments_count = db.query(models.ReportComment).filter(
+                models.ReportComment.report_id == report.id
+            ).count()
+            
+            reports_list.append({
+                "id": report.id,
+                "title": report.title,
+                "description": report.description,
+                "issue_type": report.issue_type.value if hasattr(report.issue_type, 'value') else report.issue_type,
+                "status": report.status.value if hasattr(report.status, 'value') else report.status,
+                "priority": report.priority.value if hasattr(report.priority, 'value') else report.priority,
+                "address": report.address,
+                "latitude": float(report.latitude) if report.latitude else None,
+                "longitude": float(report.longitude) if report.longitude else None,
+                "image_urls": image_urls,
+                "is_anonymous": report.is_anonymous,
+                "upvotes": report.upvotes,
+                "views": report.views,
+                "created_at": str(report.created_at),
+                "updated_at": str(report.updated_at) if report.updated_at else None,
+                "resolved_at": str(report.resolved_at) if report.resolved_at else None,
+                "user": {
+                    "id": user.id if user else None,
+                    "full_name": user.full_name if user else "Anonymous",
+                    "email": user.email if user else "N/A"
+                } if user and not report.is_anonymous else {"id": None, "full_name": "Anonymous", "email": "N/A"},
+                "assigned_official": {
+                    "id": assigned_official.id if assigned_official else None,
+                    "full_name": assigned_official.full_name if assigned_official else None,
+                    "department": assigned_official.department if assigned_official else None
+                } if assigned_official else None,
+                "assigned_zone": report.assigned_zone,
+                "comments_count": comments_count
+            })
+        
+        return {
+            "reports": reports_list,
+            "total": total
+        }
+        
+    except Exception as e:
+        print(f"❌ Error fetching reports: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return {"reports": [], "total": 0}
+
+
+@app.get("/api/admin/reports/{report_id}")
+async def get_report_details(
+    report_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get detailed report information for admin"""
+    try:
+        report = db.query(models.Report).filter(
+            models.Report.id == report_id
+        ).first()
+        
+        if not report:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Report not found"
+            )
+        
+        # Get user info
+        user = None
+        if report.user_id:
+            user = db.query(models.User).filter(
+                models.User.id == report.user_id
+            ).first()
+        
+        # Get assigned official
+        assigned_official = None
+        if report.assigned_to:
+            assigned_official = db.query(models.Official).filter(
+                models.Official.id == report.assigned_to
+            ).first()
+        
+        # Get images
+        images = db.query(models.ReportImage).filter(
+            models.ReportImage.report_id == report_id
+        ).order_by(models.ReportImage.display_order).all()
+        
+        image_list = [{
+            "id": img.id,
+            "filename": img.filename,
+            "file_path": img.file_path,
+            "mime_type": img.mime_type,
+            "uploaded_at": str(img.uploaded_at)
+        } for img in images]
+        
+        # Get comments
+        comments = db.query(models.ReportComment).filter(
+            models.ReportComment.report_id == report_id
+        ).order_by(models.ReportComment.created_at.desc()).all()
+        
+        comments_list = [{
+            "id": comment.id,
+            "user_id": comment.user_id,
+            "user_role": comment.user_role.value if hasattr(comment.user_role, 'value') else comment.user_role,
+            "comment": comment.comment,
+            "is_internal": comment.is_internal,
+            "created_at": str(comment.created_at)
+        } for comment in comments]
+        
+        # Get status history
+        status_history = db.query(models.ReportStatusHistory).filter(
+            models.ReportStatusHistory.report_id == report_id
+        ).order_by(models.ReportStatusHistory.created_at.desc()).all()
+        
+        history_list = [{
+            "id": hist.id,
+            "old_status": hist.old_status.value if hist.old_status and hasattr(hist.old_status, 'value') else hist.old_status,
+            "new_status": hist.new_status.value if hasattr(hist.new_status, 'value') else hist.new_status,
+            "changed_by": hist.changed_by,
+            "changed_by_role": hist.changed_by_role.value if hasattr(hist.changed_by_role, 'value') else hist.changed_by_role,
+            "comment": hist.comment,
+            "created_at": str(hist.created_at)
+        } for hist in status_history]
+        
+        report_dict = {
+            "id": report.id,
+            "title": report.title,
+            "description": report.description,
+            "issue_type": report.issue_type.value if hasattr(report.issue_type, 'value') else report.issue_type,
+            "status": report.status.value if hasattr(report.status, 'value') else report.status,
+            "priority": report.priority.value if hasattr(report.priority, 'value') else report.priority,
+            "address": report.address,
+            "latitude": float(report.latitude) if report.latitude else None,
+            "longitude": float(report.longitude) if report.longitude else None,
+            "is_anonymous": report.is_anonymous,
+            "upvotes": report.upvotes,
+            "views": report.views,
+            "created_at": str(report.created_at),
+            "updated_at": str(report.updated_at) if report.updated_at else None,
+            "resolved_at": str(report.resolved_at) if report.resolved_at else None,
+            "closed_at": str(report.closed_at) if report.closed_at else None,
+            "user": {
+                "id": user.id if user else None,
+                "full_name": user.full_name if user else "Anonymous",
+                "email": user.email if user else "N/A",
+                "phone_number": user.phone_number if user and hasattr(user, 'phone_number') else None
+            } if user and not report.is_anonymous else {"id": None, "full_name": "Anonymous", "email": "N/A", "phone_number": None},
+            "assigned_official": {
+                "id": assigned_official.id if assigned_official else None,
+                "full_name": assigned_official.full_name if assigned_official else None,
+                "email": assigned_official.email if assigned_official else None,
+                "department": assigned_official.department if assigned_official else None,
+                "designation": assigned_official.designation if assigned_official else None
+            } if assigned_official else None,
+            "assigned_zone": report.assigned_zone,
+            "images": image_list,
+            "comments": comments_list,
+            "status_history": history_list
+        }
+        
+        return report_dict
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error fetching report details: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch report details"
+        )
+
+
+@app.patch("/api/admin/reports/{report_id}/status")
+async def update_report_status(
+    report_id: int,
+    status_data: dict,
+    db: Session = Depends(get_db)
+):
+    """Update report status and create status history"""
+    try:
+        new_status = status_data.get("status")
+        comment = status_data.get("comment", "Status updated by admin")
+        
+        report = db.query(models.Report).filter(
+            models.Report.id == report_id
+        ).first()
+        
+        if not report:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Report not found"
+            )
+        
+        # Get old status
+        old_status = report.status
+        
+        # Update status
+        valid_statuses = ['pending', 'under_review', 'in_progress', 'resolved', 'rejected', 'closed']
+        if new_status and new_status.lower() in valid_statuses:
+            status_enum = getattr(models.ReportStatus, new_status.upper(), None)
+            if status_enum:
+                report.status = status_enum
+                
+                # Update timestamps
+                from datetime import datetime
+                report.updated_at = datetime.utcnow()
+                
+                if new_status.lower() == 'resolved':
+                    report.resolved_at = datetime.utcnow()
+                elif new_status.lower() == 'closed':
+                    report.closed_at = datetime.utcnow()
+                
+                # Create status history entry
+                status_history = models.ReportStatusHistory(
+                    report_id=report_id,
+                    old_status=old_status,
+                    new_status=status_enum,
+                    changed_by=1,  # Admin user ID (you can pass this from context)
+                    changed_by_role=models.UserRole.ADMIN,
+                    comment=comment
+                )
+                db.add(status_history)
+                
+                db.commit()
+                db.refresh(report)
+                
+                print(f"✅ Updated report {report_id} status from {old_status} to {new_status}")
+                
+                return {
+                    "success": True,
+                    "message": f"Report status updated to {new_status}",
+                    "report": {
+                        "id": report.id,
+                        "status": report.status.value if hasattr(report.status, 'value') else report.status,
+                        "updated_at": str(report.updated_at)
+                    }
+                }
+        
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status. Use: {', '.join(valid_statuses)}"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error updating report status: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update report status"
+        )
+
+
+@app.delete("/api/admin/reports/{report_id}")
+async def delete_report(
+    report_id: int,
+    db: Session = Depends(get_db)
+):
+    """Delete a report (admin only) - cascade will handle related records"""
+    try:
+        report = db.query(models.Report).filter(
+            models.Report.id == report_id
+        ).first()
+        
+        if not report:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Report not found"
+            )
+        
+        # Delete the report (cascade will delete images, comments, status_history)
+        db.delete(report)
+        db.commit()
+        
+        print(f"✅ Deleted report {report_id}")
+        
+        return {
+            "success": True,
+            "message": "Report deleted successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error deleting report: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete report"
+        )
+
+
+@app.patch("/api/admin/reports/{report_id}/priority")
+async def update_report_priority(
+    report_id: int,
+    priority_data: dict,
+    db: Session = Depends(get_db)
+):
+    """Update report priority"""
+    try:
+        new_priority = priority_data.get("priority")
+        
+        report = db.query(models.Report).filter(
+            models.Report.id == report_id
+        ).first()
+        
+        if not report:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Report not found"
+            )
+        
+        # Update priority
+        valid_priorities = ['low', 'medium', 'high', 'critical']
+        if new_priority and new_priority.lower() in valid_priorities:
+            priority_enum = getattr(models.ReportPriority, new_priority.upper(), None)
+            if priority_enum:
+                report.priority = priority_enum
+                
+                from datetime import datetime
+                report.updated_at = datetime.utcnow()
+                
+                db.commit()
+                db.refresh(report)
+                
+                return {
+                    "success": True,
+                    "message": f"Report priority updated to {new_priority}"
+                }
+        
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid priority. Use: {', '.join(valid_priorities)}"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error updating report priority: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update report priority"
+        )
 
 if __name__ == "__main__":
     import uvicorn
