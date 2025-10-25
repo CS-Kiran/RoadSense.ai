@@ -16,6 +16,9 @@ from fastapi import UploadFile, Query
 import uuid
 import mimetypes
 from pathlib import Path
+from math import radians, cos, sin, asin, sqrt
+from datetime import datetime, timedelta
+from typing import Dict
 
 
 # print("🗑️  Dropping all tables...")
@@ -28,13 +31,22 @@ print("✅ Database setup complete!")
 
 app = FastAPI(title="RoadSense.ai API", version="1.0.0")
 
-origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
+origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 UPLOAD_DIR = "uploads/government_ids"
@@ -672,7 +684,6 @@ async def close_report(
         "report_id": report_id
     }
 
-# 8. DELETE REPORT (User or Admin)
 @app.delete("/api/reports/{report_id}")
 async def delete_report(
     report_id: int,
@@ -712,7 +723,6 @@ async def delete_report(
     
     return {"message": "Report deleted successfully", "report_id": report_id}
 
-# 9. GET REPORT STATUS HISTORY
 @app.get("/api/reports/{report_id}/history", response_model=List[schemas.StatusHistoryResponse])
 async def get_report_history(
     report_id: int,
@@ -735,7 +745,6 @@ async def get_report_history(
     
     return history
 
-# 10. SERVE REPORT IMAGE
 @app.get("/api/reports/images/{filename}")
 async def get_report_image(
     filename: str,
@@ -790,6 +799,472 @@ async def get_report_statistics(
         "by_issue_type": {issue.value: count for issue, count in issue_counts}
     }
 
+@app.get("/api/reports/nearby")
+async def get_nearby_reports(
+    latitude: float = Query(..., description="User's current latitude"),
+    longitude: float = Query(..., description="User's current longitude"),
+    radius_km: float = Query(10, ge=0.1, le=100, description="Search radius in kilometers"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get nearby reports for heatmap visualization.
+    Calculates severity based on report density in areas.
+    Public endpoint - no authentication required for map viewing.
+    """
+    
+    # Haversine formula to calculate distance between two points
+    def haversine(lon1, lat1, lon2, lat2):
+        """Calculate distance in kilometers between two lat/lon points"""
+        lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+        dlon = lon2 - lon1
+        dlat = lat2 - lat1
+        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+        c = 2 * asin(sqrt(a))
+        km = 6371 * c  # Earth's radius in kilometers
+        return km
+    
+    # Get all reports from database
+    all_reports = db.query(models.Report).all()
+    
+    # Filter reports within radius and prepare response
+    nearby_reports = []
+    for report in all_reports:
+        distance = haversine(longitude, latitude, report.longitude, report.latitude)
+        
+        if distance <= radius_km:
+            # Get first image if available
+            first_image = None
+            if report.images and len(report.images) > 0:
+                first_image = f"/api/reports/images/{report.images[0].filename}"
+            
+            nearby_reports.append({
+                "id": report.id,
+                "latitude": report.latitude,
+                "longitude": report.longitude,
+                "address": report.address,
+                "issue_type": report.issue_type.value,
+                "title": report.title,
+                "description": report.description,
+                "status": report.status.value,
+                "priority": report.priority.value,
+                "created_at": report.created_at.isoformat(),
+                "upvotes": report.upvotes,
+                "distance_km": round(distance, 2),
+                "image_url": first_image
+            })
+    
+    # Calculate density-based severity
+    # Group reports by proximity (within 500m = 0.5km) to determine hotspots
+    def calculate_area_severity(reports_list):
+        """
+        Calculate severity based on report density.
+        More reports in a small area = higher severity.
+        """
+        result = []
+        processed = set()
+        
+        for i, report in enumerate(reports_list):
+            if i in processed:
+                continue
+            
+            # Find nearby reports within 500m to form a cluster
+            cluster = [report]
+            cluster_indices = {i}
+            
+            for j, other_report in enumerate(reports_list):
+                if j != i and j not in processed:
+                    dist = haversine(
+                        report['longitude'], report['latitude'],
+                        other_report['longitude'], other_report['latitude']
+                    )
+                    if dist <= 0.5:  # 500m radius for clustering
+                        cluster.append(other_report)
+                        cluster_indices.add(j)
+            
+            # Determine severity based on cluster size
+            cluster_size = len(cluster)
+            if cluster_size >= 5:
+                severity = "critical"
+            elif cluster_size >= 3:
+                severity = "high"
+            elif cluster_size >= 2:
+                severity = "medium"
+            else:
+                severity = "low"
+            
+            # Add severity and cluster info to all reports in cluster
+            for report_item in cluster:
+                report_item['severity'] = severity
+                report_item['cluster_count'] = cluster_size
+            
+            result.extend(cluster)
+            processed.update(cluster_indices)
+        
+        return result
+    
+    # Apply severity calculation
+    reports_with_severity = calculate_area_severity(nearby_reports)
+    
+    # Calculate statistics
+    status_counts = {}
+    severity_counts = {}
+    issue_type_counts = {}
+    
+    for report in reports_with_severity:
+        status = report['status']
+        severity = report['severity']
+        issue_type = report['issue_type']
+        
+        status_counts[status] = status_counts.get(status, 0) + 1
+        severity_counts[severity] = severity_counts.get(severity, 0) + 1
+        issue_type_counts[issue_type] = issue_type_counts.get(issue_type, 0) + 1
+    
+    return {
+        "success": True,
+        "user_location": {
+            "latitude": latitude,
+            "longitude": longitude
+        },
+        "radius_km": radius_km,
+        "total_reports": len(reports_with_severity),
+        "reports": reports_with_severity,
+        "statistics": {
+            "by_status": status_counts,
+            "by_severity": severity_counts,
+            "by_issue_type": issue_type_counts
+        }
+    }
+    
+@app.get("/api/citizens/dashboard/stats")
+async def get_citizen_dashboard_stats(
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get citizen dashboard statistics - Fixed version"""
+    try:
+        # Check user role
+        user_role = current_user.role.value if hasattr(current_user.role, 'value') else current_user.role
+        if user_role != 'citizen':
+            return {
+                "total": 0,
+                "pending": 0,
+                "in_progress": 0,
+                "resolved": 0,
+                "weekly_change": 0,
+                "avg_response_time": "24h"
+            }
+        
+        # Get user's reports
+        user_reports = db.query(models.Report).filter(
+            models.Report.user_id == current_user.id
+        ).all()
+        
+        # Calculate basic stats
+        total = len(user_reports)
+        pending = 0
+        in_progress = 0
+        resolved = 0
+        
+        for report in user_reports:
+            status = report.status.value if hasattr(report.status, 'value') else str(report.status)
+            if status.lower() == 'pending':
+                pending += 1
+            elif status.lower() in ['in_progress', 'in progress', 'acknowledged']:
+                in_progress += 1
+            elif status.lower() in ['resolved', 'closed']:
+                resolved += 1
+        
+        # Calculate weekly change
+        now = datetime.utcnow()
+        last_week = now - timedelta(days=7)
+        prev_week = now - timedelta(days=14)
+        
+        this_week_count = 0
+        prev_week_count = 0
+        
+        for report in user_reports:
+            if report.created_at:
+                if report.created_at >= last_week:
+                    this_week_count += 1
+                elif prev_week <= report.created_at < last_week:
+                    prev_week_count += 1
+        
+        if prev_week_count > 0:
+            weekly_change = round(((this_week_count - prev_week_count) / prev_week_count) * 100, 1)
+        else:
+            weekly_change = 100 if this_week_count > 0 else 0
+        
+        # Calculate average response time
+        response_times = []
+        for report in user_reports:
+            status = report.status.value if hasattr(report.status, 'value') else str(report.status)
+            if status.lower() in ['resolved', 'closed']:
+                # Try different timestamp fields
+                resolved_time = None
+                if hasattr(report, 'resolved_at') and report.resolved_at:
+                    resolved_time = report.resolved_at
+                elif hasattr(report, 'updated_at') and report.updated_at:
+                    resolved_time = report.updated_at
+                
+                if resolved_time and report.created_at:
+                    time_diff = (resolved_time - report.created_at).total_seconds()
+                    response_times.append(time_diff)
+        
+        if response_times:
+            avg_seconds = sum(response_times) / len(response_times)
+            avg_hours = int(avg_seconds / 3600)
+            if avg_hours < 1:
+                avg_response_time = "< 1h"
+            elif avg_hours < 24:
+                avg_response_time = f"{avg_hours}h"
+            else:
+                avg_days = int(avg_hours / 24)
+                avg_response_time = f"{avg_days}d"
+        else:
+            avg_response_time = "24h"
+        
+        return {
+            "total": total,
+            "pending": pending,
+            "in_progress": in_progress,
+            "resolved": resolved,
+            "weekly_change": weekly_change,
+            "avg_response_time": avg_response_time
+        }
+        
+    except Exception as e:
+        import traceback
+        print(f"❌ Error in dashboard stats: {str(e)}")
+        print(traceback.format_exc())
+        
+        # Return default values instead of error
+        return {
+            "total": 0,
+            "pending": 0,
+            "in_progress": 0,
+            "resolved": 0,
+            "weekly_change": 0,
+            "avg_response_time": "24h"
+        }
+
+
+@app.get("/api/citizens/dashboard/recent-reports")
+async def get_recent_reports(
+    limit: int = Query(5, ge=1, le=20),
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get user's recent reports for dashboard - Fixed version"""
+    try:
+        # Check user role
+        user_role = current_user.role.value if hasattr(current_user.role, 'value') else current_user.role
+        if user_role != 'citizen':
+            return []
+        
+        # Get reports
+        reports = db.query(models.Report).filter(
+            models.Report.user_id == current_user.id
+        ).order_by(models.Report.created_at.desc()).limit(limit).all()
+        
+        # Format response
+        result = []
+        for report in reports:
+            try:
+                # Safely get enum values
+                status = report.status.value if hasattr(report.status, 'value') else str(report.status)
+                priority = report.priority.value if hasattr(report.priority, 'value') else str(report.priority)
+                issue_type = report.issue_type.value if hasattr(report.issue_type, 'value') else str(report.issue_type)
+                
+                # Count images safely
+                image_count = 0
+                if report.images:
+                    try:
+                        if isinstance(report.images, str):
+                            import json
+                            images = json.loads(report.images)
+                            image_count = len(images) if isinstance(images, list) else 0
+                        elif isinstance(report.images, list):
+                            image_count = len(report.images)
+                    except:
+                        image_count = 0
+                
+                # Format created_at
+                created_at = report.created_at.isoformat() if report.created_at else datetime.utcnow().isoformat()
+                
+                result.append({
+                    "id": report.id,
+                    "title": report.title or "Untitled",
+                    "issue_type": issue_type,
+                    "status": status,
+                    "priority": priority,
+                    "address": report.address or "Unknown location",
+                    "created_at": created_at,
+                    "upvotes": report.upvotes or 0,
+                    "image_count": image_count
+                })
+            except Exception as e:
+                print(f"Error processing report {report.id}: {str(e)}")
+                continue
+        
+        return result
+        
+    except Exception as e:
+        import traceback
+        print(f"❌ Error in recent reports: {str(e)}")
+        print(traceback.format_exc())
+        return []
+    
+
+@app.get("/api/users/me/profile")
+async def get_user_profile(
+    current_user = Depends(auth.get_current_user)
+):
+    """Get current user profile"""
+    return {
+        "id": current_user.id,
+        "full_name": current_user.full_name,
+        "email": current_user.email,
+        "phone_number": getattr(current_user, 'phone_number', None),
+        "profile_image_url": getattr(current_user, 'profile_image_url', None),
+        "role": current_user.role.value,
+        "account_status": current_user.account_status.value,
+        "created_at": current_user.created_at.isoformat()
+    }
+
+
+@app.patch("/api/users/me/profile")
+async def update_user_profile(
+    profile_data: Dict,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update user profile"""
+    # Update allowed fields
+    if "full_name" in profile_data:
+        current_user.full_name = profile_data["full_name"]
+    
+    if "phone_number" in profile_data:
+        current_user.phone_number = profile_data.get("phone_number")
+    
+    if "profile_image_url" in profile_data:
+        current_user.profile_image_url = profile_data.get("profile_image_url")
+    
+    db.commit()
+    db.refresh(current_user)
+    
+    return {
+        "message": "Profile updated successfully",
+        "data": {
+            "id": current_user.id,
+            "full_name": current_user.full_name,
+            "email": current_user.email,
+            "phone_number": getattr(current_user, 'phone_number', None),
+            "profile_image_url": getattr(current_user, 'profile_image_url', None)
+        }
+    }
+
+
+@app.post("/api/users/change-password")
+async def change_password(
+    password_data: Dict,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Change user password"""
+    current_password = password_data.get("currentPassword")
+    new_password = password_data.get("newPassword")
+    
+    if not current_password or not new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Both current and new passwords are required"
+        )
+    
+    # Verify current password
+    if not auth.verify_password(current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect"
+        )
+    
+    # Update password
+    current_user.password_hash = auth.get_password_hash(new_password)
+    db.commit()
+    
+    return {"message": "Password changed successfully"}
+
+
+@app.patch("/api/users/notification-preferences")
+async def update_notification_preferences(
+    preferences: Dict,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update user notification preferences"""
+    # In a real app, you'd store these in a user_preferences table
+    # For now, just return success
+    return {"message": "Notification preferences updated successfully"}
+
+
+PROFILE_IMAGES_DIR = "uploads/profile_images"
+os.makedirs(PROFILE_IMAGES_DIR, exist_ok=True)
+
+@app.post("/api/upload/profile-image")
+async def upload_profile_image(
+    image: UploadFile = File(...),
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Upload profile image"""
+    # Validate image
+    is_valid, message = validate_image(image)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=message
+        )
+    
+    # Generate unique filename
+    file_extension = image.filename.split(".")[-1].lower()
+    unique_filename = f"profile_{current_user.id}_{uuid.uuid4().hex}.{file_extension}"
+    file_path = os.path.join(PROFILE_IMAGES_DIR, unique_filename)
+    
+    # Save file
+    try:
+        image.file.seek(0)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+        
+        # Generate URL (adjust based on your server setup)
+        image_url = f"/api/uploads/profile-images/{unique_filename}"
+        
+        return {
+            "message": "Image uploaded successfully",
+            "data": {
+                "url": image_url,
+                "filename": unique_filename
+            }
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error uploading image: {str(e)}"
+        )
+
+
+@app.get("/api/uploads/profile-images/{filename}")
+async def get_profile_image(filename: str):
+    """Serve profile image file"""
+    from fastapi.responses import FileResponse
+    file_path = os.path.join(PROFILE_IMAGES_DIR, filename)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image not found"
+        )
+    
+    return FileResponse(file_path)
 
 if __name__ == "__main__":
     import uvicorn

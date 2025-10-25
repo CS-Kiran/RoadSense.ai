@@ -14,20 +14,21 @@ class UserRole(str, enum.Enum):
     CITIZEN = "citizen"
     OFFICIAL = "official"
     ADMIN = "admin"
-
+    
 class User(Base):
     __tablename__ = "users"
     
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     full_name = Column(String(255), nullable=False)
     email = Column(String(255), unique=True, nullable=False, index=True)
-    phone_number = Column(String(20), nullable=True)
+    phone_number = Column(String(20), nullable=True)  # ADD IF MISSING
     password_hash = Column(String(255), nullable=False)
     role = Column(SQLEnum(UserRole), nullable=False, default=UserRole.CITIZEN)
     account_status = Column(SQLEnum(AccountStatus), nullable=False, default=AccountStatus.ACTIVE)
+    profile_image_url = Column(String(500), nullable=True)  # ADD IF MISSING
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 class Official(Base):
     __tablename__ = "officials"

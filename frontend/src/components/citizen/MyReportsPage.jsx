@@ -50,9 +50,6 @@ const MyReportsPage = () => {
         ...(filters.category !== 'all' && { issue_type: filters.category }),
         // 'search' is not supported by the /api/reports endpoint in main.py, so it's omitted
       });
-
-      // FIX 1: Added /api/ prefix
-      // FIX 2: Switched to 'skip' and correct filter names
       const response = await axios.get(`/api/reports?${params}`);
       
       // FIX 3: Handle list response (response.data is the list)

@@ -3,23 +3,27 @@ import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Filter, 
-  MapPin, 
-  Layers, 
+import {
+  Filter,
+  MapPin,
+  Layers,
   Navigation,
   Loader2,
   Plus,
   X,
   TrendingUp,
-  Activity
+  Activity,
+  RefreshCw,
+  AlertCircle,
+  CheckCircle,
+  Info,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import axios from '@/api/axios';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
-// Fix for default markers
+// Fix Leaflet default marker icon
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
@@ -27,432 +31,538 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
 });
 
-// Create custom marker icons
-const createCustomIcon = (color) => {
-  return L.divIcon({
-    className: 'custom-marker',
-    html: `
-      <div style="
-        background: ${color};
-        width: 30px;
-        height: 30px;
-        border-radius: 50% 50% 50% 0;
-        transform: rotate(-45deg);
-        border: 3px solid white;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-      ">
-        <div style="
-          width: 10px;
-          height: 10px;
-          background: white;
-          border-radius: 50%;
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-        "></div>
-      </div>
-    `,
-    iconSize: [30, 30],
-    iconAnchor: [15, 30],
-  });
+// Severity color helper
+const getSeverityColor = (severity) => {
+  switch (severity?.toLowerCase()) {
+    case 'critical':
+      return '#991b1b';
+    case 'high':
+      return '#c2410c';
+    case 'medium':
+      return '#ca8a04';
+    case 'low':
+      return '#15803d';
+    default:
+      return '#1e40af';
+  }
 };
 
-const InteractiveMapPage = () => {
-  const [reports, setReports] = useState([]);
-  const [filters, setFilters] = useState({
-    category: 'all',
-    status: 'all',
-    severity: 'all'
-  });
-  const [mapView, setMapView] = useState('markers');
-  const [userLocation, setUserLocation] = useState([28.6139, 77.2090]);
-  const [loading, setLoading] = useState(true);
-  const [selectedReport, setSelectedReport] = useState(null);
+// Severity class helper
+function getSeverityClass(severity) {
+  switch (severity?.toLowerCase()) {
+    case 'high':
+    case 'critical':
+      return 'bg-red-100 text-red-800';
+    case 'medium':
+      return 'bg-yellow-100 text-yellow-800';
+    case 'low':
+      return 'bg-green-100 text-green-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+}
 
+// Simple Heatmap component
+function SimpleHeatmap({ points }) {
+  if (!points || points.length === 0) return null;
+
+  return (
+    <>
+      {points.map((point, idx) => {
+        const color = getSeverityColor(point.severity);
+        const radiusMap = {
+          critical: 300,
+          high: 250,
+          medium: 200,
+          low: 150,
+        };
+        const radius = radiusMap[point.severity?.toLowerCase()] || 200;
+
+        return (
+          <Circle
+            key={idx}
+            center={[point.latitude, point.longitude]}
+            radius={radius}
+            pathOptions={{
+              fillColor: color,
+              fillOpacity: 0.2,
+              color: color,
+              weight: 1,
+              opacity: 0.4,
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+const InteractiveMapPage = () => {
+  // State management
+  const [userPosition, setUserPosition] = useState(null);
+  const [defaultCenter, setDefaultCenter] = useState([20.5937, 78.9629]); // India center
+  const [loading, setLoading] = useState(true);
+  const [loadingReports, setLoadingReports] = useState(true);
+  const [locationError, setLocationError] = useState(null);
+  const [reports, setReports] = useState([]);
+
+  const [filters, setFilters] = useState({
+    severity: [],
+    status: [],
+    issueType: [],
+    showHeatmap: false,
+  });
+
+  // Get user location on mount with proper error handling
   useEffect(() => {
     getUserLocation();
+  }, []);
+
+  // Fetch reports when component mounts (even without location)
+  useEffect(() => {
     fetchReports();
-  }, [filters]);
+  }, [userPosition]);
 
   const getUserLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation([position.coords.latitude, position.coords.longitude]);
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-        }
-      );
+    setLoading(true);
+    setLocationError(null);
+
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported by your browser');
+      setLoading(false);
+      return;
     }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const pos = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        setUserPosition(pos);
+        setDefaultCenter([pos.lat, pos.lng]);
+        setLoading(false);
+        setLocationError(null);
+      },
+      (error) => {
+        console.error('Geolocation error:', error);
+        setLoading(false);
+
+        // Handle different error codes
+        let errorMessage = '';
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = 'Location access was denied. Please enable location permissions in your browser settings.';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = 'Location information is unavailable. Make sure location services are enabled on your device and you have a stable GPS/WiFi connection.';
+            break;
+          case error.TIMEOUT:
+            errorMessage = 'Location request timed out. Please try again.';
+            break;
+          default:
+            errorMessage = 'An unknown error occurred while trying to get your location.';
+        }
+        setLocationError(errorMessage);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000, // Increased timeout to 15 seconds
+        maximumAge: 0,
+      }
+    );
   };
 
   const fetchReports = async () => {
-    setLoading(true);
+    setLoadingReports(true);
     try {
-      const params = new URLSearchParams({
-        ...(filters.category !== 'all' && { category: filters.category }),
-        ...(filters.status !== 'all' && { status: filters.status }),
-        ...(filters.severity !== 'all' && { severity: filters.severity }),
-        includeLocation: true
+      const token = localStorage.getItem('token');
+
+      // Build query params
+      const params = new URLSearchParams();
+      if (userPosition) {
+        params.append('latitude', userPosition.lat);
+        params.append('longitude', userPosition.lng);
+        params.append('radius_km', '50');
+      }
+
+      const response = await axios.get(`/api/reports?${params.toString()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
-      const response = await axios.get(`/reports/nearby?${params}`);
-      setReports(response.data.data || []);
+      setReports(response.data || []);
     } catch (error) {
       console.error('Error fetching reports:', error);
-      setReports([]);
     } finally {
-      setLoading(false);
+      setLoadingReports(false);
     }
   };
 
-  const getStatusColor = (status) => {
-    const colors = {
-      pending: '#F59E0B',
-      acknowledged: '#3B82F6',
-      inprogress: '#8B5CF6',
-      resolved: '#10B981',
-      rejected: '#EF4444'
-    };
-    return colors[status] || '#6B7280';
-  };
+  const toggleFilter = (category, value) => {
+    setFilters((prev) => {
+      const currentValues = prev[category];
+      const newValues = currentValues.includes(value)
+        ? currentValues.filter((v) => v !== value)
+        : [...currentValues, value];
 
-  const getStatusConfig = (status) => {
-    const configs = {
-      pending: {
-        color: 'bg-amber-100 text-amber-700 border-amber-200',
-        gradient: 'from-amber-500 to-orange-600'
-      },
-      acknowledged: {
-        color: 'bg-blue-100 text-blue-700 border-blue-200',
-        gradient: 'from-blue-500 to-blue-600'
-      },
-      inprogress: {
-        color: 'bg-purple-100 text-purple-700 border-purple-200',
-        gradient: 'from-purple-500 to-purple-600'
-      },
-      resolved: {
-        color: 'bg-green-100 text-green-700 border-green-200',
-        gradient: 'from-green-500 to-green-600'
-      },
-      rejected: {
-        color: 'bg-red-100 text-red-700 border-red-200',
-        gradient: 'from-red-500 to-red-600'
-      }
-    };
-    return configs[status] || configs.pending;
+      return { ...prev, [category]: newValues };
+    });
   };
 
   const clearFilters = () => {
-    setFilters({ category: 'all', status: 'all', severity: 'all' });
+    setFilters({
+      severity: [],
+      status: [],
+      issueType: [],
+      showHeatmap: false,
+    });
   };
 
-  const hasActiveFilters = filters.category !== 'all' || filters.status !== 'all' || filters.severity !== 'all';
-
-  const filteredReports = reports.filter(report => {
-    if (filters.category !== 'all' && report.categoryname !== filters.category) return false;
-    if (filters.status !== 'all' && report.status !== filters.status) return false;
-    if (filters.severity !== 'all') {
-      if (filters.severity === 'high' && report.severity < 7) return false;
-      if (filters.severity === 'medium' && (report.severity < 4 || report.severity >= 7)) return false;
-      if (filters.severity === 'low' && report.severity >= 4) return false;
+  // Filter reports
+  const filteredReports = reports.filter((report) => {
+    if (filters.severity.length > 0 && !filters.severity.includes(report.severity?.toLowerCase())) {
+      return false;
+    }
+    if (filters.status.length > 0 && !filters.status.includes(report.status?.toLowerCase())) {
+      return false;
+    }
+    if (filters.issueType.length > 0 && !filters.issueType.includes(report.issue_type?.toLowerCase())) {
+      return false;
     }
     return true;
   });
 
+  const hasActiveFilters =
+    filters.severity.length > 0 || filters.status.length > 0 || filters.issueType.length > 0;
+
   return (
-    <div className="space-y-6">
-      {/* Header with Gradient */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-green-600 via-emerald-700 to-teal-800 p-8 text-white shadow-xl">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-5 rounded-full -mr-32 -mt-32"></div>
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-white opacity-5 rounded-full -ml-24 -mb-24"></div>
-        
-        <div className="relative z-10 flex items-center justify-between">
-          <div>
-            <div className="flex items-center space-x-3 mb-2">
-              <MapPin size={32} />
-              <h1 className="text-3xl font-bold">Interactive Map</h1>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h1 className="text-4xl font-bold text-slate-800 mb-2">Interactive Map</h1>
+              <p className="text-slate-600">View and explore nearby road issues in real-time</p>
+              {userPosition && (
+                <div className="mt-2 flex items-start gap-2 text-sm text-green-600">
+                  <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>
+                    ✓ Location: {userPosition.lat.toFixed(4)}, {userPosition.lng.toFixed(4)}
+                  </span>
+                </div>
+              )}
             </div>
-            <p className="text-green-100 text-lg">
-              View and explore nearby road issues in real-time
-            </p>
-          </div>
-          <Link to="/citizen/report-issue">
-            <Button className="bg-white text-green-600 hover:bg-green-50 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all">
-              <Plus size={20} className="mr-2" />
-              Report Issue
-            </Button>
-          </Link>
-        </div>
-      </div>
-
-      {/* Filters & Controls */}
-      <Card className="p-6 border-0 shadow-lg">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-3">
-            <Filter className="text-blue-600" size={20} />
-            <h3 className="font-semibold text-gray-900">Filters & View</h3>
-            {hasActiveFilters && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearFilters}
-                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-              >
-                <X size={14} className="mr-1" />
-                Clear All
+            <div className="flex gap-3 flex-wrap">
+              <Button onClick={getUserLocation} variant="outline" disabled={loading}>
+                {loading ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Navigation className="w-4 h-4 mr-2" />
+                )}
+                Detect Location
               </Button>
-            )}
-          </div>
-
-          {/* View Toggle */}
-          <div className="flex items-center space-x-2">
-            <Button
-              variant={mapView === 'markers' ? 'default' : 'outline'}
-              onClick={() => setMapView('markers')}
-              size="sm"
-              className={mapView === 'markers' ? 'bg-gradient-to-r from-blue-600 to-blue-700' : ''}
-            >
-              <MapPin size={16} className="mr-1" />
-              Markers
-            </Button>
-            <Button
-              variant={mapView === 'heatmap' ? 'default' : 'outline'}
-              onClick={() => setMapView('heatmap')}
-              size="sm"
-              className={mapView === 'heatmap' ? 'bg-gradient-to-r from-purple-600 to-purple-700' : ''}
-            >
-              <Layers size={16} className="mr-1" />
-              Heatmap
-            </Button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Category Filter */}
-          <select
-            value={filters.category}
-            onChange={(e) => setFilters({ ...filters, category: e.target.value })}
-            className="px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-          >
-            <option value="all">All Categories</option>
-            <option value="pothole">Pothole</option>
-            <option value="crack">Crack</option>
-            <option value="flooding">Flooding</option>
-            <option value="signage">Signage</option>
-            <option value="lighting">Street Lighting</option>
-          </select>
-
-          {/* Status Filter */}
-          <select
-            value={filters.status}
-            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-            className="px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-          >
-            <option value="all">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="acknowledged">Acknowledged</option>
-            <option value="inprogress">In Progress</option>
-            <option value="resolved">Resolved</option>
-          </select>
-
-          {/* Severity Filter */}
-          <select
-            value={filters.severity}
-            onChange={(e) => setFilters({ ...filters, severity: e.target.value })}
-            className="px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-          >
-            <option value="all">All Severity</option>
-            <option value="high">High (7-10)</option>
-            <option value="medium">Medium (4-6)</option>
-            <option value="low">Low (1-3)</option>
-          </select>
-        </div>
-      </Card>
-
-      {/* Map Container */}
-      <Card className="overflow-hidden border-0 shadow-xl">
-        <div style={{ height: '600px', width: '100%', position: 'relative' }}>
-          {loading ? (
-            <div className="flex flex-col items-center justify-center h-full bg-gradient-to-br from-blue-50 to-indigo-50">
-              <Loader2 className="h-12 w-12 animate-spin text-blue-600 mb-4" />
-              <p className="text-gray-600 font-medium">Loading map data...</p>
+              <Button onClick={fetchReports} variant="outline" disabled={loadingReports}>
+                {loadingReports ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                )}
+                Refresh
+              </Button>
+              <Link to="/citizen/report-issue">
+                <Button>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Report Issue
+                </Button>
+              </Link>
             </div>
-          ) : (
-            <MapContainer
-              center={userLocation}
-              zoom={13}
-              style={{ height: '100%', width: '100%' }}
-              className="z-0"
-            >
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
+          </div>
 
-              {/* User Location */}
-              <Marker
-                position={userLocation}
-                icon={createCustomIcon('#3B82F6')}
-              >
-                <Popup>
-                  <div className="p-2 text-center">
-                    <Navigation className="mx-auto mb-2 text-blue-600" size={24} />
-                    <p className="font-semibold text-gray-900">Your Location</p>
-                    <p className="text-xs text-gray-600 mt-1">Current position</p>
-                  </div>
-                </Popup>
-              </Marker>
+          {/* Location Loading Banner */}
+          {loading && (
+            <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-5 h-5 text-blue-600 animate-spin flex-shrink-0" />
+                <div>
+                  <p className="font-medium text-blue-900">Detecting your location...</p>
+                  <p className="text-sm text-blue-700">This may take a few seconds. Please wait...</p>
+                </div>
+              </div>
+            </div>
+          )}
 
-              {/* Report Markers */}
-              {mapView === 'markers' && filteredReports.map((report) => {
-                if (!report.location?.coordinates) return null;
-                const [lng, lat] = report.location.coordinates;
-                const statusConfig = getStatusConfig(report.status);
-
-                return (
-                  <Marker
-                    key={report.id}
-                    position={[lat, lng]}
-                    icon={createCustomIcon(getStatusColor(report.status))}
-                    eventHandlers={{
-                      click: () => setSelectedReport(report)
-                    }}
-                  >
-                    <Popup maxWidth={300}>
-                      <div className="p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <Badge className={`${statusConfig.color} border text-xs`}>
-                            {report.status.toUpperCase()}
-                          </Badge>
-                          <span className="text-xs text-gray-500">
-                            {report.reportnumber}
-                          </span>
-                        </div>
-
-                        <h3 className="font-bold text-gray-900 mb-2">
-                          {report.title}
-                        </h3>
-
-                        <p className="text-sm text-gray-600 mb-2">
-                          {report.categoryname}
-                        </p>
-
-                        {report.reportmedia && report.reportmedia[0] && (
-                          <img
-                            src={report.reportmedia[0].thumbnailurl || report.reportmedia[0].fileurl}
-                            alt="Report"
-                            className="w-full h-32 object-cover rounded-lg mb-3"
-                          />
-                        )}
-
-                        <Link to={`/citizen/reports/${report.id}`}>
-                          <Button size="sm" className="w-full bg-gradient-to-r from-blue-600 to-blue-700">
-                            View Details
-                          </Button>
-                        </Link>
-                      </div>
-                    </Popup>
-                  </Marker>
-                );
-              })}
-
-              {/* Heatmap Circles */}
-              {mapView === 'heatmap' && filteredReports.map((report) => {
-                if (!report.location?.coordinates) return null;
-                const [lng, lat] = report.location.coordinates;
-                const radius = report.severity >= 7 ? 300 : report.severity >= 4 ? 200 : 150;
-
-                return (
-                  <Circle
-                    key={report.id}
-                    center={[lat, lng]}
-                    radius={radius}
-                    pathOptions={{
-                      color: getStatusColor(report.status),
-                      fillColor: getStatusColor(report.status),
-                      fillOpacity: 0.3,
-                      weight: 2
-                    }}
-                  />
-                );
-              })}
-            </MapContainer>
+          {/* Location Error Banner */}
+          {locationError && (
+            <div className="mt-4 bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-medium text-orange-900">Unable to detect location</p>
+                  <p className="text-sm text-orange-700 mt-1">{locationError}</p>
+                  <p className="text-sm text-orange-600 mt-2">
+                    <strong>Troubleshooting:</strong>
+                  </p>
+                  <ul className="text-sm text-orange-600 mt-1 ml-4 list-disc">
+                    <li>Enable location services on your device</li>
+                    <li>Check if WiFi or GPS is working</li>
+                    <li>Allow location access in browser settings</li>
+                    <li>Try using a different browser</li>
+                  </ul>
+                  <p className="text-sm text-slate-600 mt-3">
+                    📍 <strong>Note:</strong> The map will show reports from India. You can still browse and report issues.
+                  </p>
+                </div>
+                <Button size="sm" variant="outline" onClick={getUserLocation}>
+                  Try Again
+                </Button>
+              </div>
+            </div>
           )}
         </div>
-      </Card>
 
-      {/* Legend */}
-      <Card className="p-6 border-0 shadow-lg">
-        <h3 className="font-bold text-lg mb-4 text-gray-900 flex items-center">
-          <Activity className="mr-2 text-blue-600" size={20} />
-          Map Legend
-        </h3>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <div className="flex items-center space-x-3">
-            <div className="w-4 h-4 rounded-full bg-amber-500 shadow-md"></div>
-            <span className="text-sm font-medium text-gray-700">Pending</span>
-          </div>
-          <div className="flex items-center space-x-3">
-            <div className="w-4 h-4 rounded-full bg-blue-500 shadow-md"></div>
-            <span className="text-sm font-medium text-gray-700">Acknowledged</span>
-          </div>
-          <div className="flex items-center space-x-3">
-            <div className="w-4 h-4 rounded-full bg-purple-500 shadow-md"></div>
-            <span className="text-sm font-medium text-gray-700">In Progress</span>
-          </div>
-          <div className="flex items-center space-x-3">
-            <div className="w-4 h-4 rounded-full bg-green-500 shadow-md"></div>
-            <span className="text-sm font-medium text-gray-700">Resolved</span>
-          </div>
-          <div className="flex items-center space-x-3">
-            <div className="w-4 h-4 rounded-full bg-red-500 shadow-md"></div>
-            <span className="text-sm font-medium text-gray-700">Rejected</span>
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Filters Sidebar */}
+          <Card className="p-6 h-fit shadow-xl border-0">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-lg flex items-center gap-2">
+                <Filter className="w-5 h-5" />
+                Filters
+              </h3>
+              {hasActiveFilters && (
+                <Button variant="ghost" size="sm" onClick={clearFilters}>
+                  <X className="w-4 h-4 mr-1" />
+                  Clear
+                </Button>
+              )}
+            </div>
+
+            {/* Severity Filter */}
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-slate-700 mb-3">Severity</h4>
+              <div className="space-y-2">
+                {['critical', 'high', 'medium', 'low'].map((severity) => (
+                  <label key={severity} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={filters.severity.includes(severity)}
+                      onChange={() => toggleFilter('severity', severity)}
+                      className="rounded"
+                    />
+                    <Badge variant="outline" className={getSeverityClass(severity)}>
+                      {severity.charAt(0).toUpperCase() + severity.slice(1)}
+                    </Badge>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Status Filter */}
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-slate-700 mb-3">Status</h4>
+              <div className="space-y-2">
+                {['pending', 'in_progress', 'resolved', 'closed'].map((status) => (
+                  <label key={status} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={filters.status.includes(status)}
+                      onChange={() => toggleFilter('status', status)}
+                      className="rounded"
+                    />
+                    <span className="text-sm capitalize">{status.replace('_', ' ')}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Issue Type Filter */}
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-slate-700 mb-3">Issue Type</h4>
+              <div className="space-y-2">
+                {['pothole', 'crack', 'debris', 'street_light', 'drainage', 'other'].map((type) => (
+                  <label key={type} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={filters.issueType.includes(type)}
+                      onChange={() => toggleFilter('issueType', type)}
+                      className="rounded"
+                    />
+                    <span className="text-sm capitalize">{type.replace('_', ' ')}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Heatmap Toggle */}
+            <div className="pt-4 border-t">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={filters.showHeatmap}
+                  onChange={() => setFilters((prev) => ({ ...prev, showHeatmap: !prev.showHeatmap }))}
+                  className="rounded"
+                />
+                <Layers className="w-4 h-4" />
+                <span className="text-sm font-medium">Show Heatmap</span>
+              </label>
+            </div>
+          </Card>
+
+          {/* Map Container */}
+          <div className="lg:col-span-3 space-y-6">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-blue-700 font-medium">Total Issues</p>
+                    <p className="text-3xl font-bold text-blue-900 mt-1">{filteredReports.length}</p>
+                  </div>
+                  <Activity className="w-10 h-10 text-blue-600 opacity-50" />
+                </div>
+              </Card>
+
+              <Card className="p-4 bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-yellow-700 font-medium">Pending</p>
+                    <p className="text-3xl font-bold text-yellow-900 mt-1">
+                      {filteredReports.filter((r) => r.status === 'pending').length}
+                    </p>
+                  </div>
+                  <AlertCircle className="w-10 h-10 text-yellow-600 opacity-50" />
+                </div>
+              </Card>
+
+              <Card className="p-4 bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-orange-700 font-medium">In Progress</p>
+                    <p className="text-3xl font-bold text-orange-900 mt-1">
+                      {filteredReports.filter((r) => r.status === 'in_progress').length}
+                    </p>
+                  </div>
+                  <TrendingUp className="w-10 h-10 text-orange-600 opacity-50" />
+                </div>
+              </Card>
+
+              <Card className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-green-200 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-green-700 font-medium">Resolved</p>
+                    <p className="text-3xl font-bold text-green-900 mt-1">
+                      {filteredReports.filter((r) => r.status === 'resolved').length}
+                    </p>
+                  </div>
+                  <CheckCircle className="w-10 h-10 text-green-600 opacity-50" />
+                </div>
+              </Card>
+            </div>
+
+            {/* Map Card */}
+            <Card className="p-8 shadow-xl border-0">
+              <div className="text-center mb-6">
+                <h2 className="text-2xl font-bold text-slate-800 mb-2">Road Issues Map</h2>
+                <p className="text-slate-600">
+                  {userPosition
+                    ? 'Showing issues near your location'
+                    : 'Showing issues from India'}
+                </p>
+              </div>
+
+              {/* Map Container - Always renders, even without user location */}
+              <div className="relative rounded-xl overflow-hidden border-4 border-slate-200 shadow-lg">
+                <MapContainer
+                  center={defaultCenter}
+                  zoom={userPosition ? 13 : 5}
+                  className="h-[500px] w-full"
+                  zoomControl={true}
+                >
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+
+                  {/* User Location Marker */}
+                  {userPosition && (
+                    <Marker position={[userPosition.lat, userPosition.lng]}>
+                      <Popup>
+                        <div className="p-2">
+                          <p className="font-semibold text-blue-900 mb-1">📍 Your Location</p>
+                          <p className="text-xs text-slate-500">
+                            {userPosition.lat.toFixed(6)}, {userPosition.lng.toFixed(6)}
+                          </p>
+                        </div>
+                      </Popup>
+                    </Marker>
+                  )}
+
+                  {/* Heatmap Circles */}
+                  {filters.showHeatmap && <SimpleHeatmap points={filteredReports} />}
+
+                  {/* Report Markers */}
+                  {!filters.showHeatmap &&
+                    filteredReports.map((report) => (
+                      <Marker key={report.id} position={[report.latitude, report.longitude]}>
+                        <Popup maxWidth={300}>
+                          <div className="p-3">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <h4 className="font-bold text-slate-900 text-base leading-tight">
+                                {report.title}
+                              </h4>
+                              {report.severity && (
+                                <Badge variant="outline" className={getSeverityClass(report.severity)}>
+                                  {report.severity}
+                                </Badge>
+                              )}
+                            </div>
+
+                            <p className="text-sm text-slate-600 mb-3 line-clamp-2">{report.description}</p>
+
+                            {report.status && (
+                              <p className="text-xs text-slate-500 mb-2">
+                                <strong>Status:</strong> {report.status}
+                              </p>
+                            )}
+
+                            <Link to={`/citizen/reports/${report.id}`}>
+                              <Button size="sm" className="w-full mt-2">
+                                View Details
+                              </Button>
+                            </Link>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    ))}
+                </MapContainer>
+
+                {/* Map Info Banner */}
+                <div className="absolute top-4 left-4 right-4 z-[1000] pointer-events-none">
+                  <div className="bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3 flex items-start gap-3">
+                    <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-slate-700">
+                      {userPosition ? (
+                        <strong>Blue marker shows your location</strong>
+                      ) : (
+                        <strong>Click "Detect Location" to center map on your position</strong>
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Loading Overlay */}
+                {loadingReports && (
+                  <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-[999]">
+                    <div className="text-center">
+                      <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-3" />
+                      <p className="text-slate-700 font-medium">Loading reports...</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
           </div>
         </div>
-      </Card>
-
-      {/* Statistics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="p-6 text-center border-0 shadow-lg hover:shadow-xl transition-all group">
-          <div className="bg-gradient-to-br from-blue-500 to-blue-600 w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
-            <MapPin className="text-white" size={24} />
-          </div>
-          <p className="text-3xl font-bold text-gray-900">{filteredReports.length}</p>
-          <p className="text-sm text-gray-600 mt-1">Total Issues</p>
-        </Card>
-
-        <Card className="p-6 text-center border-0 shadow-lg hover:shadow-xl transition-all group">
-          <div className="bg-gradient-to-br from-amber-500 to-orange-600 w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
-            <TrendingUp className="text-white" size={24} />
-          </div>
-          <p className="text-3xl font-bold text-amber-600">
-            {filteredReports.filter(r => r.status === 'pending').length}
-          </p>
-          <p className="text-sm text-gray-600 mt-1">Pending</p>
-        </Card>
-
-        <Card className="p-6 text-center border-0 shadow-lg hover:shadow-xl transition-all group">
-          <div className="bg-gradient-to-br from-purple-500 to-purple-600 w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
-            <Activity className="text-white" size={24} />
-          </div>
-          <p className="text-3xl font-bold text-purple-600">
-            {filteredReports.filter(r => r.status === 'inprogress').length}
-          </p>
-          <p className="text-sm text-gray-600 mt-1">In Progress</p>
-        </Card>
-
-        <Card className="p-6 text-center border-0 shadow-lg hover:shadow-xl transition-all group">
-          <div className="bg-gradient-to-br from-green-500 to-green-600 w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
-            <MapPin className="text-white" size={24} />
-          </div>
-          <p className="text-3xl font-bold text-green-600">
-            {filteredReports.filter(r => r.status === 'resolved').length}
-          </p>
-          <p className="text-sm text-gray-600 mt-1">Resolved</p>
-        </Card>
       </div>
     </div>
   );
