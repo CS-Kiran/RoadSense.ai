@@ -1,21 +1,34 @@
 // src/components/official/OfficialLayout.jsx
 import React, { useState } from 'react';
+import { Outlet } from 'react-router-dom';
 import OfficialSidebar from './OfficialSidebar';
 import OfficialHeader from './OfficialHeader';
 
-const OfficialLayout = ({ children }) => {
+const OfficialLayout = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (
-    <div className="flex h-screen bg-slate-50">
-      <OfficialSidebar 
-        isCollapsed={sidebarCollapsed} 
-        setIsCollapsed={setSidebarCollapsed} 
+    <div className="min-h-screen bg-gray-50">
+      {/* Sidebar */}
+      <OfficialSidebar
+        isCollapsed={sidebarCollapsed}
+        setIsCollapsed={setSidebarCollapsed}
       />
-      <div className="flex-1 flex flex-col overflow-hidden">
+
+      {/* Main Content Area */}
+      <div
+        className={`transition-all duration-300 ease-in-out ${
+          sidebarCollapsed ? 'ml-20' : 'ml-64'
+        }`}
+      >
+        {/* Header */}
         <OfficialHeader />
-        <main className="flex-1 overflow-y-auto p-6">
-          {children}
+
+        {/* Page Content - This renders the child routes */}
+        <main className="p-6">
+          <div className="max-w-7xl mx-auto">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

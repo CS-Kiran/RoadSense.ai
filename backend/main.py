@@ -808,133 +808,125 @@ async def get_nearby_reports(
     db: Session = Depends(get_db)
 ):
     """
-    Get nearby reports for heatmap visualization.
-    Calculates severity based on report density in areas.
-    Public endpoint - no authentication required for map viewing.
+    PUBLIC ENDPOINT - NO AUTHENTICATION REQUIRED
+    Get nearby reports for map visualization with numeric severity (1-10).
     """
-    
-    # Haversine formula to calculate distance between two points
-    def haversine(lon1, lat1, lon2, lat2):
-        """Calculate distance in kilometers between two lat/lon points"""
-        lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
-        dlon = lon2 - lon1
-        dlat = lat2 - lat1
-        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-        c = 2 * asin(sqrt(a))
-        km = 6371 * c  # Earth's radius in kilometers
-        return km
-    
-    # Get all reports from database
-    all_reports = db.query(models.Report).all()
-    
-    # Filter reports within radius and prepare response
-    nearby_reports = []
-    for report in all_reports:
-        distance = haversine(longitude, latitude, report.longitude, report.latitude)
+    try:
+        # Haversine formula
+        def haversine(lon1, lat1, lon2, lat2):
+            lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+            dlon, dlat = lon2 - lon1, lat2 - lat1
+            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+            return 6371 * 2 * asin(sqrt(a))
         
-        if distance <= radius_km:
-            # Get first image if available
-            first_image = None
-            if report.images and len(report.images) > 0:
-                first_image = f"/api/reports/images/{report.images[0].filename}"
-            
-            nearby_reports.append({
-                "id": report.id,
-                "latitude": report.latitude,
-                "longitude": report.longitude,
-                "address": report.address,
-                "issue_type": report.issue_type.value,
-                "title": report.title,
-                "description": report.description,
-                "status": report.status.value,
-                "priority": report.priority.value,
-                "created_at": report.created_at.isoformat(),
-                "upvotes": report.upvotes,
-                "distance_km": round(distance, 2),
-                "image_url": first_image
-            })
-    
-    # Calculate density-based severity
-    # Group reports by proximity (within 500m = 0.5km) to determine hotspots
-    def calculate_area_severity(reports_list):
-        """
-        Calculate severity based on report density.
-        More reports in a small area = higher severity.
-        """
-        result = []
-        processed = set()
+        # Priority to severity mapping
+        priority_map = {"low": 3, "medium": 5, "high": 7, "critical": 9}
         
-        for i, report in enumerate(reports_list):
-            if i in processed:
-                continue
+        # Get all reports
+        all_reports = db.query(models.Report).all()
+        nearby_reports = []
+        
+        for report in all_reports:
+            distance = haversine(longitude, latitude, report.longitude, report.latitude)
             
-            # Find nearby reports within 500m to form a cluster
-            cluster = [report]
-            cluster_indices = {i}
+            if distance <= radius_km:
+                first_image = None
+                if report.images and len(report.images) > 0:
+                    first_image = f"/api/reports/images/{report.images[0].filename}"
+                
+                base_severity = priority_map.get(
+                    report.priority.value if hasattr(report.priority, 'value') else report.priority,
+                    5
+                )
+                
+                nearby_reports.append({
+                    "id": report.id,
+                    "latitude": float(report.latitude),
+                    "longitude": float(report.longitude),
+                    "address": report.address,
+                    "issue_type": report.issue_type.value if hasattr(report.issue_type, 'value') else report.issue_type,
+                    "title": report.title,
+                    "description": report.description,
+                    "status": report.status.value if hasattr(report.status, 'value') else report.status,
+                    "priority": report.priority.value if hasattr(report.priority, 'value') else report.priority,
+                    "created_at": report.created_at.isoformat(),
+                    "upvotes": report.upvotes,
+                    "distance_km": round(distance, 2),
+                    "image_url": first_image,
+                    "base_severity": base_severity
+                })
+        
+        # Calculate severity with clustering
+        def calculate_severity_with_clusters(reports_list):
+            result, processed = [], set()
             
-            for j, other_report in enumerate(reports_list):
-                if j != i and j not in processed:
-                    dist = haversine(
-                        report['longitude'], report['latitude'],
-                        other_report['longitude'], other_report['latitude']
-                    )
-                    if dist <= 0.5:  # 500m radius for clustering
-                        cluster.append(other_report)
-                        cluster_indices.add(j)
+            for i, report in enumerate(reports_list):
+                if i in processed:
+                    continue
+                
+                cluster, cluster_indices = [report], {i}
+                
+                for j, other_report in enumerate(reports_list):
+                    if j != i and j not in processed:
+                        if haversine(report['longitude'], report['latitude'], 
+                                    other_report['longitude'], other_report['latitude']) <= 0.5:
+                            cluster.append(other_report)
+                            cluster_indices.add(j)
+                
+                cluster_size = len(cluster)
+                cluster_bonus = 1 if cluster_size >= 5 else 0.7 if cluster_size >= 3 else 0.3 if cluster_size >= 2 else 0
+                
+                for report_item in cluster:
+                    report_item['severity'] = round(min(10, report_item['base_severity'] + cluster_bonus), 1)
+                    report_item['cluster_count'] = cluster_size
+                    del report_item['base_severity']
+                    result.append(report_item)
+                
+                processed.update(cluster_indices)
             
-            # Determine severity based on cluster size
-            cluster_size = len(cluster)
-            if cluster_size >= 5:
-                severity = "critical"
-            elif cluster_size >= 3:
-                severity = "high"
-            elif cluster_size >= 2:
-                severity = "medium"
+            return result
+        
+        reports_with_severity = calculate_severity_with_clusters(nearby_reports)
+        
+        # Calculate statistics
+        status_counts, issue_type_counts = {}, {}
+        severity_distribution = {"low": 0, "medium": 0, "high": 0, "critical": 0}
+        
+        for report in reports_with_severity:
+            status_counts[report['status']] = status_counts.get(report['status'], 0) + 1
+            issue_type_counts[report['issue_type']] = issue_type_counts.get(report['issue_type'], 0) + 1
+            
+            if report['severity'] >= 8:
+                severity_distribution["critical"] += 1
+            elif report['severity'] >= 6:
+                severity_distribution["high"] += 1
+            elif report['severity'] >= 4:
+                severity_distribution["medium"] += 1
             else:
-                severity = "low"
-            
-            # Add severity and cluster info to all reports in cluster
-            for report_item in cluster:
-                report_item['severity'] = severity
-                report_item['cluster_count'] = cluster_size
-            
-            result.extend(cluster)
-            processed.update(cluster_indices)
+                severity_distribution["low"] += 1
         
-        return result
-    
-    # Apply severity calculation
-    reports_with_severity = calculate_area_severity(nearby_reports)
-    
-    # Calculate statistics
-    status_counts = {}
-    severity_counts = {}
-    issue_type_counts = {}
-    
-    for report in reports_with_severity:
-        status = report['status']
-        severity = report['severity']
-        issue_type = report['issue_type']
-        
-        status_counts[status] = status_counts.get(status, 0) + 1
-        severity_counts[severity] = severity_counts.get(severity, 0) + 1
-        issue_type_counts[issue_type] = issue_type_counts.get(issue_type, 0) + 1
-    
-    return {
-        "success": True,
-        "user_location": {
-            "latitude": latitude,
-            "longitude": longitude
-        },
-        "radius_km": radius_km,
-        "total_reports": len(reports_with_severity),
-        "reports": reports_with_severity,
-        "statistics": {
-            "by_status": status_counts,
-            "by_severity": severity_counts,
-            "by_issue_type": issue_type_counts
+        return {
+            "success": True,
+            "user_location": {"latitude": latitude, "longitude": longitude},
+            "radius_km": radius_km,
+            "total_reports": len(reports_with_severity),
+            "reports": reports_with_severity,
+            "statistics": {
+                "by_status": status_counts,
+                "by_issue_type": issue_type_counts,
+                "by_severity": severity_distribution
+            }
         }
-    }
+    
+    except Exception as e:
+        print(f"❌ Error in nearby reports: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching nearby reports: {str(e)}"
+        )
+
     
 @app.get("/api/citizens/dashboard/stats")
 async def get_citizen_dashboard_stats(
@@ -1268,17 +1260,15 @@ async def get_profile_image(filename: str):
     return FileResponse(file_path)
 
 @app.post("/api/admin/login")
-async def admin_login(
-    login_data: dict,
-    db: Session = Depends(get_db)
-):
-    """
-    Simple admin login - checks credentials against admin table
-    No JWT tokens, just plain validation
-    """
+async def admin_login(login_data: dict, db: Session = Depends(get_db)):
+    """Admin login endpoint - separate from regular users"""
     try:
         username = login_data.get("username")
         password = login_data.get("password")
+        
+        print(f"\n🔐 Admin login attempt:")
+        print(f"   Username: {username}")
+        print(f"   Password length: {len(password) if password else 0}")
         
         if not username or not password:
             raise HTTPException(
@@ -1286,39 +1276,85 @@ async def admin_login(
                 detail="Username and password are required"
             )
         
-        # Query admin table directly
-        result = db.execute(
-            text("SELECT id, username, created_at FROM admin WHERE username = :username AND password = :password LIMIT 1"),
-            {"username": username, "password": password}
-        )
-        admin_row = result.fetchone()
+        # Query admin by username
+        print(f"   Querying database for username: {username}")
+        admin = db.query(models.Admin).filter(
+            models.Admin.username == username
+        ).first()
         
-        if admin_row:
-            # Successful login
-            return {
-                "success": True,
-                "message": "Login successful",
+        if not admin:
+            print(f"   ❌ Admin user '{username}' not found in database")
+            # Check if any admins exist
+            admin_count = db.query(models.Admin).count()
+            print(f"   Total admins in database: {admin_count}")
+            
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid username or password"
+            )
+        
+        print(f"   ✅ Admin user found: ID={admin.id}, Active={admin.is_active}")
+        
+        # Check if admin is active
+        if not admin.is_active:
+            print(f"   ❌ Admin account is inactive")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin account is inactive"
+            )
+        
+        # Verify password
+        print(f"   🔍 Verifying password...")
+        print(f"   Stored hash (first 50 chars): {admin.password_hash[:50]}...")
+        
+        is_valid = auth.verify_password(password, admin.password_hash)
+        print(f"   Password verification result: {is_valid}")
+        
+        if not is_valid:
+            print(f"   ❌ Password verification failed")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid username or password"
+            )
+        
+        print(f"   ✅ Password verified successfully")
+        
+        # Update last login timestamp
+        admin.last_login = datetime.utcnow()
+        db.commit()
+        
+        # Create access token
+        access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = auth.create_access_token(
+            data={
+                "sub": admin.username,
                 "role": "admin",
-                "user": {
-                    "id": admin_row.id,
-                    "username": admin_row.username,
-                    "full_name": "Administrator",
-                    "email": f"{admin_row.username}@roadsense.ai",
-                    "role": "admin",
-                    "created_at": str(admin_row.created_at)
-                }
-            }
-        
-        # Invalid credentials
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password"
+                "admin_id": admin.id,
+                "email": admin.email
+            },
+            expires_delta=access_token_expires
         )
+        
+        print(f"   ✅ Login successful, token generated")
+        
+        return {
+            "success": True,
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": admin.id,
+                "username": admin.username,
+                "full_name": admin.full_name,
+                "email": admin.email,
+                "role": "admin",
+                "is_super_admin": admin.is_super_admin
+            }
+        }
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Admin login error: {str(e)}")
+        print(f"❌ Error in admin login: {str(e)}")
         import traceback
         print(traceback.format_exc())
         raise HTTPException(
@@ -2173,6 +2209,733 @@ async def update_report_priority(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update report priority"
+        )
+
+# ==================== PUBLIC ENDPOINTS (NO AUTH REQUIRED) ====================
+
+@app.get("/api/reports/map")
+async def get_public_map_reports(
+    status: Optional[str] = Query(None),
+    limit: int = Query(1000, le=5000),
+    db: Session = Depends(get_db)
+):
+    """
+    PUBLIC ENDPOINT - Get reports for map visualization
+    No authentication required
+    """
+    try:
+        print(f"📍 Public map request - status: {status}, limit: {limit}")
+        
+        # Build query
+        query = db.query(models.Report)
+        
+        # Filter by status if provided
+        if status and status.upper() != 'ALL':
+            try:
+                status_enum = models.ReportStatus(status.upper())
+                query = query.filter(models.Report.status == status_enum)
+            except ValueError:
+                print(f"⚠️ Invalid status: {status}")
+        
+        # Get reports
+        reports = query.order_by(models.Report.created_at.desc()).limit(limit).all()
+        
+        print(f"✅ Found {len(reports)} reports for map")
+        
+        # Format response
+        result = []
+        for report in reports:
+            try:
+                report_data = {
+                    "id": report.id,
+                    "title": report.title,
+                    "description": report.description,
+                    "latitude": float(report.latitude) if report.latitude else None,
+                    "longitude": float(report.longitude) if report.longitude else None,
+                    "address": report.address,
+                    "created_at": report.created_at.isoformat() if report.created_at else None,
+                }
+                
+                # Add status safely
+                if hasattr(report.status, 'value'):
+                    report_data["status"] = report.status.value
+                else:
+                    report_data["status"] = str(report.status)
+                
+                # Add priority safely
+                if hasattr(report, 'priority'):
+                    if hasattr(report.priority, 'value'):
+                        report_data["priority"] = report.priority.value
+                    else:
+                        report_data["priority"] = str(report.priority) if report.priority else "MEDIUM"
+                else:
+                    report_data["priority"] = "MEDIUM"
+                
+                # Add issue_type safely
+                if hasattr(report.issue_type, 'value'):
+                    report_data["issue_type"] = report.issue_type.value
+                else:
+                    report_data["issue_type"] = str(report.issue_type)
+                
+                result.append(report_data)
+            except Exception as e:
+                print(f"⚠️ Error formatting report {report.id}: {str(e)}")
+                continue
+        
+        return result
+        
+    except Exception as e:
+        print(f"❌ Error in public map endpoint: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch map data: {str(e)}"
+        )
+
+# ===== OFFICIAL DASHBOARD ENDPOINTS =====
+
+@app.get("/api/official/dashboard/stats")
+async def get_official_dashboard_stats(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get dashboard statistics for officials"""
+    try:
+        if current_user["role"] != "official":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Officials only."
+            )
+        
+        print(f"🔍 Looking for official with email: {current_user['sub']}")
+        
+        # Get official by email from JWT token
+        official = db.query(models.Official).filter(
+            models.Official.email == current_user["sub"]
+        ).first()
+        
+        if not official:
+            print(f"❌ No official found with email: {current_user['sub']}")
+            print(f"   Current user data: {current_user}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Official profile not found. Please contact administrator."
+            )
+        
+        print(f"✅ Official found: ID={official.id}, Email={official.email}")
+        
+        # Get report statistics using DOT NOTATION (not bracket notation)
+        total_assigned = db.query(models.Report).filter(
+            models.Report.assigned_to == official.id
+        ).count()
+        
+        pending = db.query(models.Report).filter(
+            models.Report.assigned_to == official.id,
+            models.Report.status == models.ReportStatus.PENDING
+        ).count()
+        
+        in_progress = db.query(models.Report).filter(
+            models.Report.assigned_to == official.id,
+            models.Report.status == models.ReportStatus.IN_PROGRESS
+        ).count()
+        
+        resolved = db.query(models.Report).filter(
+            models.Report.assigned_to == official.id,
+            models.Report.status == models.ReportStatus.RESOLVED
+        ).count()
+        
+        # Get zone-based statistics using DOT NOTATION
+        zone_reports = db.query(models.Report).filter(
+            models.Report.assigned_zone == official.zone
+        ).count()
+        
+        stats = {
+            "total_assigned": total_assigned,
+            "pending": pending,
+            "in_progress": in_progress,
+            "resolved": resolved,
+            "zone_reports": zone_reports,
+            "zones_managed": 1,
+            "team_members": 0
+        }
+        
+        print(f"✅ Stats calculated: {stats}")
+        return stats
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error fetching dashboard stats: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.get("/api/official/reports")
+async def get_assigned_reports(
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    search: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 50,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get reports assigned to the current official"""
+    try:
+        if current_user["role"] != "official":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Officials only."
+            )
+        
+        # Get official by email
+        official = db.query(models.Official).filter(
+            models.Official.email == current_user["sub"]
+        ).first()
+        
+        if not official:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Official profile not found"
+            )
+        
+        # Base query - using DOT NOTATION
+        query = db.query(models.Report).filter(
+            models.Report.assigned_to == official.id
+        )
+        
+        # Apply filters
+        if status and status != "all":
+            status_upper = status.upper().replace("-", "_")
+            status_enum = getattr(models.ReportStatus, status_upper, None)
+            if status_enum:
+                query = query.filter(models.Report.status == status_enum)
+        
+        if priority and priority != "all":
+            priority_enum = getattr(models.ReportPriority, priority.upper(), None)
+            if priority_enum:
+                query = query.filter(models.Report.priority == priority_enum)
+        
+        if search:
+            query = query.filter(
+                (models.Report.title.ilike(f"%{search}%")) |
+                (models.Report.description.ilike(f"%{search}%")) |
+                (models.Report.address.ilike(f"%{search}%"))
+            )
+        
+        # Order by created_at descending
+        query = query.order_by(models.Report.created_at.desc())
+        
+        # Get total count
+        total = query.count()
+        
+        # Apply pagination
+        reports = query.offset(skip).limit(limit).all()
+        
+        # Format response using DOT NOTATION
+        reports_data = []
+        for report in reports:
+            citizen = db.query(models.User).filter(
+                models.User.id == report.user_id
+            ).first()
+            
+            reports_data.append({
+                "id": report.id,
+                "title": report.title,
+                "description": report.description,
+                "status": report.status.value,
+                "priority": report.priority.value,
+                "address": report.address,
+                "latitude": report.latitude,
+                "longitude": report.longitude,
+                "issue_type": report.issue_type.value,
+                "created_at": report.created_at.isoformat(),
+                "updated_at": report.updated_at.isoformat() if report.updated_at else None,
+                "citizen_name": citizen.full_name if citizen else "Unknown",
+                "citizen_email": citizen.email if citizen else None,
+                "upvotes": report.upvotes,
+                "views": report.views
+            })
+        
+        return {
+            "reports": reports_data,
+            "total": total,
+            "skip": skip,
+            "limit": limit
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error fetching assigned reports: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+@app.get("/api/official/reports/{report_id}")
+async def get_report_detail(
+    report_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get detailed information about a specific report"""
+    try:
+        if current_user["role"] != "official":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Officials only."
+            )
+        
+        official = db.query(models.Official).filter(
+            models.Official.user_id == current_user["id"]
+        ).first()
+        
+        report = db.query(models.Report).filter(
+            models.Report.id == report_id
+        ).first()
+        
+        if not report:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Report not found"
+            )
+        
+        # Verify the report is assigned to this official
+        if report.assigned_to != official.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have access to this report"
+            )
+        
+        # Increment view count
+        report.views += 1
+        db.commit()
+        
+        # Get citizen information
+        citizen = db.query(models.User).filter(
+            models.User.id == report.user_id
+        ).first()
+        
+        # Get report images
+        images = db.query(models.ReportImage).filter(
+            models.ReportImage.report_id == report_id
+        ).order_by(models.ReportImage.display_order).all()
+        
+        # Get comments
+        comments = db.query(models.ReportComment).filter(
+            models.ReportComment.report_id == report_id
+        ).order_by(models.ReportComment.created_at.desc()).all()
+        
+        # Get status history
+        status_history = db.query(models.ReportStatusHistory).filter(
+            models.ReportStatusHistory.report_id == report_id
+        ).order_by(models.ReportStatusHistory.created_at.desc()).all()
+        
+        return {
+            "id": report.id,
+            "title": report.title,
+            "description": report.description,
+            "status": report.status.value,
+            "priority": report.priority.value,
+            "issue_type": report.issue_type.value,
+            "address": report.address,
+            "latitude": report.latitude,
+            "longitude": report.longitude,
+            "upvotes": report.upvotes,
+            "views": report.views,
+            "is_anonymous": report.is_anonymous,
+            "created_at": report.created_at.isoformat(),
+            "updated_at": report.updated_at.isoformat() if report.updated_at else None,
+            "resolved_at": report.resolved_at.isoformat() if report.resolved_at else None,
+            "citizen": {
+                "id": citizen.id if citizen and not report.is_anonymous else None,
+                "name": citizen.full_name if citizen and not report.is_anonymous else "Anonymous",
+                "email": citizen.email if citizen and not report.is_anonymous else None
+            },
+            "images": [{
+                "id": img.id,
+                "filename": img.filename,
+                "file_path": img.file_path,
+                "display_order": img.display_order
+            } for img in images],
+            "comments": [{
+                "id": comment.id,
+                "user_id": comment.user_id,
+                "user_role": comment.user_role.value,
+                "comment": comment.comment,
+                "is_internal": comment.is_internal,
+                "created_at": comment.created_at.isoformat()
+            } for comment in comments],
+            "status_history": [{
+                "id": history.id,
+                "old_status": history.old_status.value if history.old_status else None,
+                "new_status": history.new_status.value,
+                "changed_by": history.changed_by,
+                "changed_by_role": history.changed_by_role.value,
+                "comment": history.comment,
+                "created_at": history.created_at.isoformat()
+            } for history in status_history]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching report detail: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+@app.put("/api/official/reports/{report_id}/status")
+async def update_report_status(
+    report_id: int,
+    status_data: dict,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update the status of a report"""
+    try:
+        if current_user["role"] != "official":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Officials only."
+            )
+        
+        official = db.query(models.Official).filter(
+            models.Official.user_id == current_user["id"]
+        ).first()
+        
+        report = db.query(models.Report).filter(
+            models.Report.id == report_id
+        ).first()
+        
+        if not report:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Report not found"
+            )
+        
+        if report.assigned_to != official.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have access to this report"
+            )
+        
+        new_status = status_data.get("status")
+        comment = status_data.get("comment", "")
+        
+        # Validate new status
+        try:
+            new_status_enum = models.ReportStatus[new_status.upper()]
+        except KeyError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid status value"
+            )
+        
+        # Create status history entry
+        status_history = models.ReportStatusHistory(
+            report_id=report_id,
+            old_status=report.status,
+            new_status=new_status_enum,
+            changed_by=official.id,
+            changed_by_role=models.UserRole.OFFICIAL,
+            comment=comment
+        )
+        db.add(status_history)
+        
+        # Update report status
+        old_status = report.status
+        report.status = new_status_enum
+        
+        # Update timestamps based on status
+        if new_status_enum == models.ReportStatus.RESOLVED and not report.resolved_at:
+            report.resolved_at = datetime.utcnow()
+        elif new_status_enum == models.ReportStatus.CLOSED and not report.closed_at:
+            report.closed_at = datetime.utcnow()
+        
+        db.commit()
+        
+        return {
+            "message": "Status updated successfully",
+            "old_status": old_status.value,
+            "new_status": new_status_enum.value
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error updating report status: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+@app.post("/api/official/reports/{report_id}/comments")
+async def add_report_comment(
+    report_id: int,
+    comment_data: dict,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Add a comment to a report"""
+    try:
+        if current_user["role"] != "official":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Officials only."
+            )
+        
+        official = db.query(models.Official).filter(
+            models.Official.user_id == current_user["id"]
+        ).first()
+        
+        report = db.query(models.Report).filter(
+            models.Report.id == report_id
+        ).first()
+        
+        if not report:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Report not found"
+            )
+        
+        if report.assigned_to != official.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have access to this report"
+            )
+        
+        comment = models.ReportComment(
+            report_id=report_id,
+            user_id=official.id,
+            user_role=models.UserRole.OFFICIAL,
+            comment=comment_data.get("comment"),
+            is_internal=comment_data.get("is_internal", False)
+        )
+        
+        db.add(comment)
+        db.commit()
+        db.refresh(comment)
+        
+        return {
+            "message": "Comment added successfully",
+            "comment": {
+                "id": comment.id,
+                "comment": comment.comment,
+                "is_internal": comment.is_internal,
+                "created_at": comment.created_at.isoformat()
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error adding comment: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+# ===== OFFICIAL ANALYTICS ENDPOINTS =====
+
+@app.get("/api/official/profile")
+async def get_official_profile(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get official profile information"""
+    try:
+        if current_user["role"] != "official":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Officials only."
+            )
+        
+        # Get official by email from JWT
+        official = db.query(models.Official).filter(
+            models.Official.email == current_user["sub"]
+        ).first()
+        
+        if not official:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Official profile not found"
+            )
+        
+        # Use DOT NOTATION to access model attributes
+        return {
+            "id": official.id,
+            "full_name": official.full_name,
+            "email": official.email,
+            "phone_number": getattr(official, 'phone_number', None),
+            "employee_id": official.employee_id,
+            "department": official.department,
+            "designation": official.designation,
+            "zone": official.zone,
+            "account_status": official.account_status.value,
+            "is_active": official.is_active,
+            "created_at": official.created_at.isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error fetching profile: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.get("/api/official/analytics")
+async def get_official_analytics(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get analytics data for officials"""
+    try:
+        if current_user["role"] != "official":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Officials only."
+            )
+        
+        # Get official by email
+        official = db.query(models.Official).filter(
+            models.Official.email == current_user["sub"]
+        ).first()
+        
+        if not official:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Official profile not found"
+            )
+        
+        # Get reports by status - using DOT NOTATION
+        reports_by_status = db.query(
+            models.Report.status,
+            func.count(models.Report.id)
+        ).filter(
+            models.Report.assigned_to == official.id
+        ).group_by(models.Report.status).all()
+        
+        # Get reports by priority
+        reports_by_priority = db.query(
+            models.Report.priority,
+            func.count(models.Report.id)
+        ).filter(
+            models.Report.assigned_to == official.id
+        ).group_by(models.Report.priority).all()
+        
+        # Get reports by issue type
+        reports_by_issue = db.query(
+            models.Report.issue_type,
+            func.count(models.Report.id)
+        ).filter(
+            models.Report.assigned_to == official.id
+        ).group_by(models.Report.issue_type).all()
+        
+        # Calculate average resolution time
+        resolved_reports = db.query(models.Report).filter(
+            models.Report.assigned_to == official.id,
+            models.Report.status == models.ReportStatus.RESOLVED,
+            models.Report.resolved_at.isnot(None)
+        ).all()
+        
+        avg_resolution_time = None
+        if resolved_reports:
+            total_time = sum([
+                (report.resolved_at - report.created_at).total_seconds() / 3600
+                for report in resolved_reports
+            ])
+            avg_resolution_time = round(total_time / len(resolved_reports), 2)
+        
+        return {
+            "reports_by_status": {
+                status.value: count for status, count in reports_by_status
+            },
+            "reports_by_priority": {
+                priority.value: count for priority, count in reports_by_priority
+            },
+            "reports_by_issue": {
+                issue.value: count for issue, count in reports_by_issue
+            },
+            "avg_resolution_time_hours": avg_resolution_time,
+            "total_resolved": len(resolved_reports)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error fetching analytics: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+@app.get("/api/official/notifications")
+async def get_official_notifications(
+    skip: int = 0,
+    limit: int = 20,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get notifications for officials"""
+    try:
+        if current_user["role"] != "official":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Officials only."
+            )
+        
+        official = db.query(models.Official).filter(
+            models.Official.user_id == current_user["id"]
+        ).first()
+        
+        # Get recent reports assigned
+        recent_assignments = db.query(models.Report).filter(
+            models.Report.assigned_to == official.id
+        ).order_by(models.Report.created_at.desc()).limit(limit).all()
+        
+        notifications = []
+        for report in recent_assignments:
+            notifications.append({
+                "id": report.id,
+                "type": "new_assignment",
+                "title": f"New report assigned: {report.title}",
+                "description": f"Priority: {report.priority.value}",
+                "created_at": report.created_at.isoformat(),
+                "read": False
+            })
+        
+        return {
+            "notifications": notifications,
+            "total": len(notifications),
+            "unread": len(notifications)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching notifications: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
         )
 
 if __name__ == "__main__":

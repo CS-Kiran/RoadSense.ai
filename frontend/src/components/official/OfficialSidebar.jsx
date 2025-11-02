@@ -12,7 +12,6 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
-  Briefcase,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
@@ -25,137 +24,129 @@ const OfficialSidebar = ({ isCollapsed, setIsCollapsed }) => {
       path: '/official/dashboard',
       icon: LayoutDashboard,
       label: 'Dashboard',
-      description: 'Overview & Stats',
-      gradient: 'from-blue-500 to-blue-600',
     },
     {
       path: '/official/reports',
       icon: FileText,
-      label: 'Assigned Reports',
-      description: 'Manage Reports',
-      gradient: 'from-purple-500 to-purple-600',
+      label: 'Reports',
     },
     {
       path: '/official/teams',
       icon: Users,
-      label: 'Team Management',
-      description: 'Manage Teams',
-      gradient: 'from-green-500 to-green-600',
+      label: 'Teams',
     },
     {
       path: '/official/zones',
       icon: MapPin,
-      label: 'Zone Management',
-      description: 'Manage Zones',
-      gradient: 'from-orange-500 to-orange-600',
+      label: 'Zones',
     },
     {
       path: '/official/analytics',
       icon: BarChart3,
       label: 'Analytics',
-      description: 'Reports & Stats',
-      gradient: 'from-indigo-500 to-indigo-600',
     },
     {
       path: '/official/notifications',
       icon: Bell,
       label: 'Notifications',
-      description: 'Updates & Alerts',
-      gradient: 'from-pink-500 to-pink-600',
     },
     {
       path: '/official/profile',
       icon: User,
       label: 'Profile',
-      description: 'Settings & Info',
-      gradient: 'from-slate-500 to-slate-600',
     },
   ];
 
   const isActive = (path) => location.pathname === path;
 
   return (
-    <div
-      className={`${
+    <aside
+      className={`fixed left-0 top-0 h-screen bg-white border-r border-gray-200 transition-all duration-300 ease-in-out z-40 ${
         isCollapsed ? 'w-20' : 'w-64'
-      } bg-gradient-to-b from-green-900 to-green-800 text-white flex flex-col transition-all duration-300 shadow-xl`}
+      }`}
     >
-      {/* Header */}
-      <div className="p-4 border-b border-green-700">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-green-600 rounded-lg">
-            <Briefcase className="w-6 h-6" />
-          </div>
+      <div className="flex flex-col h-full">
+        {/* Header */}
+        <div className="h-16 flex items-center justify-between px-4 border-b border-gray-200">
           {!isCollapsed && (
-            <div>
-              <h1 className="font-bold text-lg">Official Portal</h1>
-              <p className="text-xs text-green-200">RoadSense.ai</p>
-            </div>
+            <h1 className="text-xl font-bold text-gray-900">RoadSense</h1>
           )}
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {isCollapsed ? (
+              <ChevronRight className="w-5 h-5 text-gray-600" />
+            ) : (
+              <ChevronLeft className="w-5 h-5 text-gray-600" />
+            )}
+          </button>
         </div>
-      </div>
 
-      {/* User Info */}
-      {!isCollapsed && (
-        <div className="p-4 bg-green-800/50 border-b border-green-700">
-          <p className="text-sm font-semibold truncate">{user?.full_name || 'Official'}</p>
-          <p className="text-xs text-green-200 truncate">{user?.email}</p>
-          <p className="text-xs text-green-300 mt-1">{user?.department || 'Government Official'}</p>
-        </div>
-      )}
+        {/* User Info */}
+        {!isCollapsed && (
+          <div className="px-4 py-4 border-b border-gray-200">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                <User className="w-5 h-5 text-blue-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">
+                  {user?.full_name || 'Official'}
+                </p>
+                <p className="text-xs text-gray-500 truncate">
+                  {user?.department || 'Department'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
-      {/* Navigation */}
-      <nav className="flex-1 p-4 overflow-y-auto">
-        <ul className="space-y-2">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.path);
+        {/* Navigation Menu */}
+        <nav className="flex-1 overflow-y-auto py-4">
+          <ul className="space-y-1 px-2">
+            {menuItems.map((item) => {
+              const Icon = item.icon;
+              const active = isActive(item.path);
 
-            return (
-              <li key={item.path}>
-                <Link
-                  to={item.path}
-                  className={`
-                    flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-200
-                    ${
+              return (
+                <li key={item.path}>
+                  <Link
+                    to={item.path}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
                       active
-                        ? 'bg-green-600 text-white shadow-lg'
-                        : 'text-green-100 hover:bg-green-700 hover:text-white'
-                    }
-                  `}
-                >
-                  <Icon className="w-5 h-5 flex-shrink-0" />
-                  {!isCollapsed && (
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{item.label}</p>
-                      <p className="text-xs opacity-75 truncate">{item.description}</p>
-                    </div>
-                  )}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+                        ? 'bg-blue-50 text-blue-600 font-medium'
+                        : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                    }`}
+                    title={isCollapsed ? item.label : ''}
+                  >
+                    <Icon className={`w-5 h-5 flex-shrink-0 ${active ? 'text-blue-600' : ''}`} />
+                    {!isCollapsed && (
+                      <span className="text-sm">{item.label}</span>
+                    )}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-green-700">
-        <button
-          onClick={logout}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-red-300 hover:bg-red-500/20 transition-colors"
-        >
-          <LogOut className="w-5 h-5" />
-          {!isCollapsed && <span className="font-medium">Logout</span>}
-        </button>
-
-        <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="w-full mt-2 flex items-center justify-center py-2 rounded-lg text-green-200 hover:bg-green-700 transition-colors"
-        >
-          {isCollapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
-        </button>
+        {/* Logout Button */}
+        <div className="p-4 border-t border-gray-200">
+          <button
+            onClick={logout}
+            className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors ${
+              isCollapsed ? 'justify-center' : ''
+            }`}
+            title={isCollapsed ? 'Logout' : ''}
+          >
+            <LogOut className="w-5 h-5 flex-shrink-0" />
+            {!isCollapsed && <span className="text-sm font-medium">Logout</span>}
+          </button>
+        </div>
       </div>
-    </div>
+    </aside>
   );
 };
 

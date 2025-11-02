@@ -18,39 +18,39 @@ export const officialRoutes = {
   children: [
     {
       path: '',
-      element: <Navigate to="/official/dashboard" replace />
+      element: <Navigate to="/official/dashboard" replace />,
     },
     {
       path: 'dashboard',
-      element: <OfficialDashboard />
+      element: <OfficialDashboard />,
     },
     {
       path: 'reports',
-      element: <AssignedReportsPage />
+      element: <AssignedReportsPage />,
     },
     {
       path: 'reports/:id',
-      element: <ReportDetailPage />
+      element: <ReportDetailPage />,
     },
     {
       path: 'teams',
-      element: <TeamManagementPage />
+      element: <TeamManagementPage />,
     },
     {
       path: 'analytics',
-      element: <AnalyticsPage />
+      element: <AnalyticsPage />,
     },
     {
       path: 'zones',
-      element: <ZoneManagementPage />
+      element: <ZoneManagementPage />,
     },
     {
       path: 'notifications',
-      element: <NotificationsPage />
+      element: <NotificationsPage />,
     },
     {
       path: 'profile',
-      element: <ProfilePage />
-    }
-  ]
+      element: <ProfilePage />,
+    },
+  ],
 };
