@@ -4,15 +4,17 @@ import { routes } from "./routes";
 import NotFound from "./pages/NotFound";
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
+import { Toaster } from "./components/ui/toaster";
 
 function App() {
   return (
     <AuthProvider>
       <Routes>
         {routes.map((route, index) => {
+          // Handle routes with children (nested routes)
           if (route.children) {
-            const RouteElement = route.protected ? (
-              <ProtectedRoute role={route.role}>
+            const ParentElement = route.protected ? (
+              <ProtectedRoute allowedRoles={[route.role]}>
                 {route.element}
               </ProtectedRoute>
             ) : (
@@ -20,21 +22,21 @@ function App() {
             );
 
             return (
-              <Route key={route.path || index} path={route.path} element={RouteElement}>
+              <Route key={index} path={route.path} element={ParentElement}>
                 {route.children.map((child, childIndex) => (
                   <Route
-                    key={child.path || childIndex}
+                    key={childIndex}
                     path={child.path}
                     element={child.element}
-                    index={child.path === ''}
                   />
                 ))}
               </Route>
             );
           }
 
+          // Handle simple routes without children
           const RouteElement = route.protected ? (
-            <ProtectedRoute role={route.role}>
+            <ProtectedRoute allowedRoles={[route.role]}>
               {route.element}
             </ProtectedRoute>
           ) : (
@@ -43,7 +45,7 @@ function App() {
 
           return (
             <Route
-              key={route.path || index}
+              key={index}
               path={route.path}
               element={RouteElement}
             />
@@ -53,6 +55,7 @@ function App() {
         {/* 404 Catch-all route */}
         <Route path="*" element={<NotFound />} />
       </Routes>
+      <Toaster />
     </AuthProvider>
   );
 }

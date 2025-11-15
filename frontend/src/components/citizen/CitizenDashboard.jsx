@@ -1,22 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { 
-  FileText, 
-  Clock, 
-  CheckCircle, 
-  AlertTriangle,
+import {
+  FileText,
+  Clock,
+  CheckCircle,
   TrendingUp,
   MapPin,
   Plus,
   Bell,
-  HelpCircle,
   Loader2,
   ArrowUpRight,
-  Activity,
-  BarChart3,
-  Calendar,
-  Users,
-  Zap
+  AlertCircle,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -28,29 +22,131 @@ const CitizenDashboard = () => {
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
-    inProgress: 0,
+    in_progress: 0,
     resolved: 0,
-    weeklyChange: 0,
-    avgResponseTime: '0'
+    weekly_change: 0,
+    avg_response_time: '24h',
   });
   const [recentReports, setRecentReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
   const fetchDashboardData = async () => {
+    setLoading(true);
+    setError(null);
+
     try {
-      const [statsRes, reportsRes] = await Promise.all([
-        axios.get('/reports/stats'),
-        axios.get('/reports?limit=5&sort=-createdat')
-      ]);
-      
-      setStats(statsRes.data.data);
-      setRecentReports(reportsRes.data.data);
+      const token = localStorage.getItem('token');
+
+      // Fetch ALL user reports using the reports endpoint
+      const reportsResponse = await axios.get('/api/reports', {
+        headers: { Authorization: `Bearer ${token}` },
+        params: {
+          limit: 100, // Get enough reports to calculate stats
+        },
+      });
+
+      const allReports = reportsResponse.data;
+      console.log('📊 Total reports fetched:', allReports.length);
+      console.log('📝 Sample report:', allReports[0]);
+
+      // Calculate stats from reports (FRONTEND LOGIC)
+      const total = allReports.length;
+
+      const pending = allReports.filter((report) => {
+        const status = report.status?.toLowerCase();
+        return status === 'pending';
+      }).length;
+
+      const inProgress = allReports.filter((report) => {
+        const status = report.status?.toLowerCase();
+        return status === 'in_progress' || status === 'in progress' || status === 'acknowledged';
+      }).length;
+
+      const resolved = allReports.filter((report) => {
+        const status = report.status?.toLowerCase();
+        return status === 'resolved' || status === 'closed';
+      }).length;
+
+      // Calculate weekly change
+      const now = new Date();
+      const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const prevWeek = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+      const thisWeekReports = allReports.filter((report) => {
+        const createdAt = new Date(report.created_at);
+        return createdAt >= lastWeek;
+      }).length;
+
+      const prevWeekReports = allReports.filter((report) => {
+        const createdAt = new Date(report.created_at);
+        return createdAt >= prevWeek && createdAt < lastWeek;
+      }).length;
+
+      let weeklyChange = 0;
+      if (prevWeekReports > 0) {
+        weeklyChange = Math.round(((thisWeekReports - prevWeekReports) / prevWeekReports) * 100);
+      } else if (thisWeekReports > 0) {
+        weeklyChange = 100;
+      }
+
+      // Calculate average response time for resolved reports
+      const resolvedReports = allReports.filter((report) => {
+        const status = report.status?.toLowerCase();
+        return (
+          (status === 'resolved' || status === 'closed') &&
+          report.created_at &&
+          report.updated_at
+        );
+      });
+
+      let avgResponseTime = '24h';
+      if (resolvedReports.length > 0) {
+        const totalResponseTime = resolvedReports.reduce((sum, report) => {
+          const created = new Date(report.created_at);
+          const resolved = new Date(report.updated_at);
+          const diffHours = (resolved - created) / (1000 * 60 * 60);
+          return sum + diffHours;
+        }, 0);
+
+        const avgHours = Math.round(totalResponseTime / resolvedReports.length);
+
+        if (avgHours < 1) {
+          avgResponseTime = '< 1h';
+        } else if (avgHours < 24) {
+          avgResponseTime = `${avgHours}h`;
+        } else {
+          const avgDays = Math.round(avgHours / 24);
+          avgResponseTime = `${avgDays}d`;
+        }
+      }
+
+      // Update stats
+      const calculatedStats = {
+        total,
+        pending,
+        in_progress: inProgress,
+        resolved,
+        weekly_change: weeklyChange,
+        avg_response_time: avgResponseTime,
+      };
+
+      console.log('✅ Calculated stats:', calculatedStats);
+
+      setStats(calculatedStats);
+
+      // Get recent 5 reports
+      const sortedReports = [...allReports].sort((a, b) => {
+        return new Date(b.created_at) - new Date(a.created_at);
+      });
+      setRecentReports(sortedReports.slice(0, 5));
     } catch (error) {
-      console.error('Error fetching dashboard data:', error);
+      console.error('❌ Error fetching dashboard data:', error);
+      setError('Failed to load dashboard data. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -65,8 +161,8 @@ const CitizenDashboard = () => {
       bgGradient: 'from-blue-50 to-blue-100',
       iconBg: 'bg-blue-500',
       link: '/citizen/reports',
-      change: '+12%',
-      changeType: 'increase'
+      change: stats.weekly_change !== 0 ? `${stats.weekly_change > 0 ? '+' : ''}${stats.weekly_change}%` : null,
+      changeType: stats.weekly_change >= 0 ? 'increase' : 'decrease',
     },
     {
       title: 'Pending',
@@ -76,19 +172,15 @@ const CitizenDashboard = () => {
       bgGradient: 'from-amber-50 to-orange-100',
       iconBg: 'bg-amber-500',
       link: '/citizen/reports?status=pending',
-      change: '-5%',
-      changeType: 'decrease'
     },
     {
       title: 'In Progress',
-      value: stats.inProgress,
+      value: stats.in_progress,
       icon: TrendingUp,
       gradient: 'from-purple-500 to-purple-600',
       bgGradient: 'from-purple-50 to-purple-100',
       iconBg: 'bg-purple-500',
-      link: '/citizen/reports?status=inprogress',
-      change: '+8%',
-      changeType: 'increase'
+      link: '/citizen/reports?status=in_progress',
     },
     {
       title: 'Resolved',
@@ -98,40 +190,42 @@ const CitizenDashboard = () => {
       bgGradient: 'from-green-50 to-green-100',
       iconBg: 'bg-green-500',
       link: '/citizen/reports?status=resolved',
-      change: '+15%',
-      changeType: 'increase'
-    }
+    },
   ];
 
   const getStatusConfig = (status) => {
+    const statusLower = status?.toLowerCase();
     const configs = {
-      pending: { 
-        variant: 'secondary', 
+      pending: {
         color: 'bg-amber-100 text-amber-700 border-amber-200',
-        dot: 'bg-amber-500'
+        dot: 'bg-amber-500',
       },
-      acknowledged: { 
-        variant: 'secondary', 
+      acknowledged: {
         color: 'bg-blue-100 text-blue-700 border-blue-200',
-        dot: 'bg-blue-500'
+        dot: 'bg-blue-500',
       },
-      inprogress: { 
-        variant: 'default', 
+      in_progress: {
         color: 'bg-purple-100 text-purple-700 border-purple-200',
-        dot: 'bg-purple-500'
+        dot: 'bg-purple-500',
       },
-      resolved: { 
-        variant: 'success', 
+      'in progress': {
+        color: 'bg-purple-100 text-purple-700 border-purple-200',
+        dot: 'bg-purple-500',
+      },
+      resolved: {
         color: 'bg-green-100 text-green-700 border-green-200',
-        dot: 'bg-green-500'
+        dot: 'bg-green-500',
       },
-      rejected: { 
-        variant: 'destructive', 
+      closed: {
+        color: 'bg-green-100 text-green-700 border-green-200',
+        dot: 'bg-green-500',
+      },
+      rejected: {
         color: 'bg-red-100 text-red-700 border-red-200',
-        dot: 'bg-red-500'
-      }
+        dot: 'bg-red-500',
+      },
     };
-    return configs[status?.toLowerCase()] || configs.pending;
+    return configs[statusLower] || configs.pending;
   };
 
   const quickActions = [
@@ -141,14 +235,14 @@ const CitizenDashboard = () => {
       icon: Plus,
       link: '/citizen/report-issue',
       color: 'bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700',
-      primary: true
+      primary: true,
     },
     {
       title: 'View Map',
       description: 'Explore nearby issues',
       icon: MapPin,
       link: '/citizen/map',
-      color: 'bg-white border-2 border-gray-200 hover:border-blue-500 hover:shadow-lg'
+      color: 'bg-white border-2 border-gray-200 hover:border-blue-500 hover:shadow-lg',
     },
     {
       title: 'Notifications',
@@ -156,252 +250,189 @@ const CitizenDashboard = () => {
       icon: Bell,
       link: '/citizen/notifications',
       color: 'bg-white border-2 border-gray-200 hover:border-blue-500 hover:shadow-lg',
-      badge: 3
-    }
+    },
   ];
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)]">
-        <Loader2 className="h-12 w-12 animate-spin text-blue-600 mb-4" />
-        <p className="text-gray-600 font-medium">Loading your dashboard...</p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
+          <p className="text-slate-700 font-medium">Loading your dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-6">
+        <div className="max-w-2xl mx-auto mt-20">
+          <Card className="p-8 text-center">
+            <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-slate-800 mb-2">Error Loading Dashboard</h2>
+            <p className="text-slate-600 mb-6">{error}</p>
+            <button
+              onClick={fetchDashboardData}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Try Again
+            </button>
+          </Card>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 pb-8">
-      {/* Welcome Header with Gradient */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 p-8 text-white shadow-xl">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-5 rounded-full -mr-32 -mt-32"></div>
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-white opacity-5 rounded-full -ml-24 -mb-24"></div>
-        
-        <div className="relative z-10">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+        {/* Header */}
+        <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <p className="text-blue-200 text-sm font-medium mb-1">Welcome back,</p>
-              <h1 className="text-3xl font-bold">{user?.fullname || 'Citizen'}</h1>
+              <h1 className="text-4xl font-bold text-slate-800 mb-2">
+                Welcome back, {user?.full_name || 'Citizen'}!
+              </h1>
+              <p className="text-slate-600">
+                {new Date().toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric',
+                })}
+              </p>
             </div>
-            <div className="hidden md:flex items-center space-x-4">
+            <div className="flex items-center gap-4">
               <div className="text-right">
-                <p className="text-xs text-blue-200">Today</p>
-                <p className="text-sm font-semibold">{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+                <p className="text-sm text-slate-600">Avg Response</p>
+                <p className="text-2xl font-bold text-slate-800">{stats.avg_response_time}</p>
               </div>
             </div>
           </div>
-          <p className="text-blue-100 text-lg mb-6">
-            Help us build better roads for our community
-          </p>
-          
-          {/* Quick Stats in Header */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-              <Activity className="text-blue-200 mb-2" size={20} />
-              <p className="text-2xl font-bold">{stats.total}</p>
-              <p className="text-xs text-blue-200">Total Reports</p>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-              <Zap className="text-yellow-300 mb-2" size={20} />
-              <p className="text-2xl font-bold">{stats.resolved}</p>
-              <p className="text-xs text-blue-200">Resolved</p>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-              <Calendar className="text-green-300 mb-2" size={20} />
-              <p className="text-2xl font-bold">{stats.avgResponseTime || '24h'}</p>
-              <p className="text-xs text-blue-200">Avg Response</p>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
-              <Users className="text-purple-300 mb-2" size={20} />
-              <p className="text-2xl font-bold">95%</p>
-              <p className="text-xs text-blue-200">Success Rate</p>
-            </div>
-          </div>
         </div>
-      </div>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {quickActions.map((action, index) => {
-          const Icon = action.icon;
-          return (
+        {/* Quick Actions */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          {quickActions.map((action, index) => (
             <Link key={index} to={action.link}>
-              <Card className={`${action.color} transition-all duration-300 transform hover:scale-105 cursor-pointer group relative overflow-hidden`}>
-                <div className="p-6">
-                  {action.badge && (
-                    <div className="absolute top-3 right-3 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
-                      {action.badge}
-                    </div>
-                  )}
-                  <div className={`${action.primary ? 'bg-white/20' : 'bg-blue-50'} w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
-                    <Icon className={action.primary ? 'text-white' : 'text-blue-600'} size={24} />
+              <Card
+                className={`p-6 ${action.color} transition-all duration-300 hover:scale-105 cursor-pointer`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <action.icon
+                      className={`w-8 h-8 mb-3 ${action.primary ? 'text-white' : 'text-blue-600'}`}
+                    />
+                    <h3
+                      className={`font-semibold text-lg mb-1 ${
+                        action.primary ? 'text-white' : 'text-slate-800'
+                      }`}
+                    >
+                      {action.title}
+                    </h3>
+                    <p className={`text-sm ${action.primary ? 'text-blue-100' : 'text-slate-600'}`}>
+                      {action.description}
+                    </p>
                   </div>
-                  <h3 className={`font-bold text-lg mb-1 ${action.primary ? 'text-white' : 'text-gray-900'}`}>
-                    {action.title}
-                  </h3>
-                  <p className={`text-sm ${action.primary ? 'text-blue-100' : 'text-gray-600'}`}>
-                    {action.description}
-                  </p>
+                  <ArrowUpRight
+                    className={`w-5 h-5 ${action.primary ? 'text-white' : 'text-slate-400'}`}
+                  />
                 </div>
               </Card>
             </Link>
-          );
-        })}
-      </div>
+          ))}
+        </div>
 
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {statCards.map((stat, index) => {
-          const Icon = stat.icon;
-          return (
-            <Link key={index} to={stat.link} className="group">
-              <Card className="relative overflow-hidden border-0 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
-                <div className={`absolute inset-0 bg-gradient-to-br ${stat.bgGradient} opacity-50`}></div>
-                
-                <div className="relative p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className={`${stat.iconBg} w-12 h-12 rounded-xl flex items-center justify-center shadow-lg`}>
-                      <Icon className="text-white" size={24} />
-                    </div>
-                    <ArrowUpRight className="text-gray-400 group-hover:text-blue-600 transition-colors" size={20} />
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {statCards.map((stat, index) => (
+            <Link key={index} to={stat.link}>
+              <Card
+                className={`p-6 bg-gradient-to-br ${stat.bgGradient} border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 cursor-pointer`}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`p-3 rounded-xl ${stat.iconBg} shadow-lg`}>
+                    <stat.icon className="w-6 h-6 text-white" />
                   </div>
-                  
-                  <p className="text-gray-600 text-sm font-medium mb-1">{stat.title}</p>
-                  <div className="flex items-end justify-between">
-                    <p className="text-4xl font-bold text-gray-900">{stat.value}</p>
-                    <div className={`flex items-center text-xs font-semibold ${
-                      stat.changeType === 'increase' ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      <TrendingUp size={14} className="mr-1" />
+                  {stat.change && (
+                    <span
+                      className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                        stat.changeType === 'increase'
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-red-100 text-red-700'
+                      }`}
+                    >
                       {stat.change}
-                    </div>
-                  </div>
+                    </span>
+                  )}
                 </div>
+                <h3 className="text-sm font-medium text-slate-700 mb-1">{stat.title}</h3>
+                <p className="text-3xl font-bold text-slate-900">{stat.value}</p>
               </Card>
             </Link>
-          );
-        })}
-      </div>
+          ))}
+        </div>
 
-      {/* Recent Reports Section */}
-      <Card className="border-0 shadow-lg">
-        <div className="p-6 border-b border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-                <BarChart3 className="mr-2 text-blue-600" size={24} />
-                Recent Activity
-              </h2>
-              <p className="text-gray-600 text-sm mt-1">Your latest report submissions</p>
-            </div>
+        {/* Recent Reports */}
+        <Card className="p-6 shadow-xl border-0">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-slate-800">Recent Reports</h2>
             <Link to="/citizen/reports">
-              <button className="text-blue-600 hover:text-blue-700 font-semibold text-sm flex items-center group">
+              <button className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-2">
                 View All
-                <ArrowUpRight size={16} className="ml-1 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                <ArrowUpRight className="w-4 h-4" />
               </button>
             </Link>
           </div>
-        </div>
 
-        <div className="divide-y divide-gray-100">
           {recentReports.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="bg-gray-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                <AlertTriangle className="text-gray-400" size={32} />
-              </div>
-              <p className="text-gray-600 font-medium mb-2">No reports yet</p>
-              <p className="text-gray-500 text-sm mb-4">Start making a difference in your community</p>
+            <div className="text-center py-12">
+              <FileText className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+              <p className="text-slate-600 mb-2">No reports yet</p>
+              <p className="text-sm text-slate-500 mb-6">
+                Start making a difference in your community
+              </p>
               <Link to="/citizen/report-issue">
-                <button className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-xl font-semibold hover:shadow-lg transition-all inline-flex items-center">
-                  <Plus size={18} className="mr-2" />
-                  Submit Your First Report
+                <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                  Report Your First Issue
                 </button>
               </Link>
             </div>
           ) : (
-            recentReports.map((report) => {
-              const statusConfig = getStatusConfig(report.status);
-              return (
-                <Link
-                  key={report.id}
-                  to={`/citizen/reports/${report.id}`}
-                  className="block p-6 hover:bg-gray-50 transition-colors group"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3 mb-3">
-                        <span className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
-                          {report.reportnumber}
-                        </span>
-                        <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${statusConfig.color}`}>
-                          <span className={`w-2 h-2 rounded-full ${statusConfig.dot} mr-2`}></span>
-                          {report.status.toUpperCase()}
+            <div className="space-y-4">
+              {recentReports.map((report) => {
+                const statusConfig = getStatusConfig(report.status);
+                return (
+                  <Link key={report.id} to={`/citizen/reports/${report.id}`}>
+                    <div className="p-4 border border-slate-200 rounded-lg hover:border-blue-300 hover:shadow-md transition-all cursor-pointer">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-slate-900 mb-1">{report.title}</h3>
+                          <p className="text-sm text-slate-600 line-clamp-1">
+                            {report.address || 'No address'}
+                          </p>
                         </div>
-                        <Badge variant="outline" className="text-xs">
-                          {report.categoryname}
+                        <Badge className={`${statusConfig.color} border flex items-center gap-1`}>
+                          <div className={`w-2 h-2 rounded-full ${statusConfig.dot}`} />
+                          {report.status}
                         </Badge>
                       </div>
-                      
-                      <h3 className="text-base font-semibold text-gray-900 mb-2 group-hover:text-blue-600 transition-colors">
-                        {report.title}
-                      </h3>
-                      
-                      <div className="flex items-center space-x-4 text-sm text-gray-500">
-                        <span className="flex items-center">
-                          <MapPin size={14} className="mr-1" />
-                          {report.address?.substring(0, 50)}...
+                      <div className="flex items-center gap-4 text-sm text-slate-500">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-4 h-4" />
+                          {new Date(report.created_at).toLocaleDateString()}
                         </span>
-                        <span className="flex items-center">
-                          <Clock size={14} className="mr-1" />
-                          {new Date(report.createdat).toLocaleDateString()}
-                        </span>
+                        <span>👍 {report.upvotes || 0}</span>
+                        {report.images && report.images.length > 0 && (
+                          <span>📷 {report.images.length}</span>
+                        )}
                       </div>
                     </div>
-                    
-                    {report.reportmedia && report.reportmedia[0] && (
-                      <img
-                        src={report.reportmedia[0].thumbnailurl || report.reportmedia[0].fileurl}
-                        alt="Report"
-                        className="w-20 h-20 object-cover rounded-xl ml-4 group-hover:scale-105 transition-transform"
-                      />
-                    )}
-                  </div>
-                </Link>
-              );
-            })
+                  </Link>
+                );
+              })}
+            </div>
           )}
-        </div>
-      </Card>
-
-      {/* Help & Resources */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="p-6 border-0 shadow-lg hover:shadow-xl transition-all group cursor-pointer bg-gradient-to-br from-blue-50 to-indigo-50">
-          <Link to="/citizen/map">
-            <MapPin className="text-blue-600 mb-4 group-hover:scale-110 transition-transform" size={32} />
-            <h3 className="font-bold text-lg text-gray-900 mb-2">Interactive Map</h3>
-            <p className="text-sm text-gray-600">
-              View and explore nearby issues on our interactive map
-            </p>
-          </Link>
-        </Card>
-
-        <Card className="p-6 border-0 shadow-lg hover:shadow-xl transition-all group cursor-pointer bg-gradient-to-br from-purple-50 to-pink-50">
-          <Link to="/citizen/notifications">
-            <Bell className="text-purple-600 mb-4 group-hover:scale-110 transition-transform" size={32} />
-            <h3 className="font-bold text-lg text-gray-900 mb-2">Notifications</h3>
-            <p className="text-sm text-gray-600">
-              Stay updated with responses from officials
-            </p>
-          </Link>
-        </Card>
-
-        <Card className="p-6 border-0 shadow-lg hover:shadow-xl transition-all group cursor-pointer bg-gradient-to-br from-green-50 to-emerald-50">
-          <Link to="/citizen/help">
-            <HelpCircle className="text-green-600 mb-4 group-hover:scale-110 transition-transform" size={32} />
-            <h3 className="font-bold text-lg text-gray-900 mb-2">Help Center</h3>
-            <p className="text-sm text-gray-600">
-              FAQs, guides, and support resources
-            </p>
-          </Link>
         </Card>
       </div>
     </div>
