@@ -22,8 +22,7 @@ from typing import Dict
 from sqlalchemy import text
 
 
-# print("🗑️  Dropping all tables...")
-# Base.metadata.drop_all(bind=engine)
+print()
 
 print("🔨 Creating all tables from models...")
 Base.metadata.create_all(bind=engine)
@@ -57,7 +56,7 @@ REPORT_IMAGES_DIR = "uploads/report_images"
 os.makedirs(REPORT_IMAGES_DIR, exist_ok=True)
 
 ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp'}
-MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_IMAGE_SIZE = 10 * 1024 * 1024
 MAX_IMAGES_PER_REPORT = 5
 
 @app.get("/")
@@ -66,7 +65,6 @@ def read_root():
 
 @app.get("/api/health")
 def health_check(db: Session = Depends(get_db)):
-    """Health check endpoint"""
     try:
         db.execute(text("SELECT 1"))
         return {"status": "healthy", "database": "connected"}
@@ -75,7 +73,6 @@ def health_check(db: Session = Depends(get_db)):
 
 @app.post("/api/register/citizen", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
 def register_citizen(user_data: schemas.CitizenRegister, db: Session = Depends(get_db)):
-    """Register a new citizen"""
     existing_user = db.query(models.User).filter(models.User.email == user_data.email).first()
     if existing_user:
         raise HTTPException(
@@ -111,7 +108,7 @@ async def register_official(
     government_id: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db)
 ):
-    """Register a new government official"""    
+    
     existing_user = db.query(models.User).filter(models.User.email == email).first()
     if existing_user:
         raise HTTPException(
@@ -220,7 +217,6 @@ async def register_official(
 
 @app.post("/api/login", response_model=schemas.Token)
 def login(login_data: schemas.LoginRequest, db: Session = Depends(get_db)):
-    """Unified login endpoint - detects user type by email domain"""
     user = auth.authenticate_user(db, login_data.email, login_data.password)
     
     if not user:
@@ -265,12 +261,10 @@ def login(login_data: schemas.LoginRequest, db: Session = Depends(get_db)):
 
 @app.get("/api/users/me", response_model=schemas.UserResponse)
 async def get_current_user_info(current_user = Depends(auth.get_current_user)):
-    """Get current authenticated user information"""
     return current_user
 
 @app.get("/api/profile")
 async def get_profile(current_user = Depends(get_current_user)):
-    """Get current user profile"""
     return {
         "id": current_user.id,
         "full_name": current_user.full_name,
@@ -282,7 +276,6 @@ async def get_profile(current_user = Depends(get_current_user)):
 
 @app.get("/api/protected")
 async def protected_route(current_user = Depends(auth.get_current_user)):
-    """Example protected route"""
     return {
         "message": f"Hello {current_user.full_name}!",
         "role": current_user.role.value,
@@ -291,40 +284,28 @@ async def protected_route(current_user = Depends(auth.get_current_user)):
 
 
 def validate_image(file: UploadFile) -> tuple[bool, str]:
-    """Validate image file"""
-    # Check file extension
     file_extension = file.filename.split(".")[-1].lower()
     if file_extension not in ALLOWED_IMAGE_EXTENSIONS:
         return False, f"Invalid file type. Allowed: {', '.join(ALLOWED_IMAGE_EXTENSIONS)}"
-    
-    # Check file size
     file.file.seek(0, 2)
     file_size = file.file.tell()
     file.file.seek(0)
-    
     if file_size > MAX_IMAGE_SIZE:
         return False, f"File size exceeds {MAX_IMAGE_SIZE / (1024*1024)}MB limit"
-    
     return True, "Valid"
 
 # Helper function to save image
 def save_report_image(file: UploadFile, report_id: int, order: int) -> tuple[str, str, int]:
-    """Save report image and return filename, filepath, and size"""
     file_extension = file.filename.split(".")[-1].lower()
     unique_filename = f"report_{report_id}_{order}_{uuid.uuid4().hex}.{file_extension}"
     file_path = os.path.join(REPORT_IMAGES_DIR, unique_filename)
-    
-    # Save file
     file.file.seek(0)
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    
     file_size = os.path.getsize(file_path)
     mime_type = mimetypes.guess_type(file_path)[0] or 'image/jpeg'
-    
     return unique_filename, file_path, file_size, mime_type
 
-# 1. CREATE REPORT WITH IMAGES
 @app.post("/api/reports", response_model=schemas.ReportResponse, status_code=status.HTTP_201_CREATED)
 async def create_report(
     latitude: float = Form(...),
@@ -338,9 +319,7 @@ async def create_report(
     current_user = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Create a new report with optional images (max 5)"""
     
-    # Validate number of images
     if len(images) > MAX_IMAGES_PER_REPORT:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -428,7 +407,6 @@ async def create_report(
             detail=f"Error creating report: {str(e)}"
         )
 
-# 2. GET ALL REPORTS (with filters)
 @app.get("/api/reports", response_model=List[schemas.ReportListResponse])
 async def get_reports(
     status_filter: Optional[str] = Query(None),
@@ -439,8 +417,6 @@ async def get_reports(
     current_user = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get all reports with optional filters"""
-    
     query = db.query(models.Report)
     
     # Apply filters
@@ -484,13 +460,11 @@ async def get_reports(
     
     return result
 
-# 3. GET USER'S REPORTS
 @app.get("/api/reports/my-reports", response_model=List[schemas.ReportResponse])
 async def get_my_reports(
     current_user = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get all reports created by logged-in user"""
     
     reports = db.query(models.Report).filter(
         models.Report.user_id == current_user.id
@@ -498,14 +472,12 @@ async def get_my_reports(
     
     return reports
 
-# 4. GET SINGLE REPORT BY ID
 @app.get("/api/reports/{report_id}", response_model=schemas.ReportResponse)
 async def get_report(
     report_id: int,
     current_user = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get single report by ID with all details"""
     
     report = db.query(models.Report).filter(models.Report.id == report_id).first()
     
@@ -521,7 +493,6 @@ async def get_report(
     
     return report
 
-# 5. UPDATE REPORT STATUS (Officials only)
 @app.patch("/api/reports/{report_id}/status")
 async def update_report_status(
     report_id: int,
@@ -529,7 +500,6 @@ async def update_report_status(
     current_user = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Update report status (Officials/Admin only)"""
     
     # Check permission
     if current_user.role not in [models.UserRole.OFFICIAL, models.UserRole.ADMIN]:
@@ -582,7 +552,6 @@ async def update_report_status(
         "new_status": report.status.value
     }
 
-# 6. ASSIGN REPORT TO OFFICIAL
 @app.patch("/api/reports/{report_id}/assign")
 async def assign_report(
     report_id: int,
@@ -590,7 +559,6 @@ async def assign_report(
     current_user = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Assign report to official (Admin only)"""
     
     if current_user.role != models.UserRole.ADMIN:
         raise HTTPException(
@@ -638,7 +606,6 @@ async def assign_report(
         "zone": official.zone
     }
 
-# 7. CLOSE REPORT (User or Official)
 @app.patch("/api/reports/{report_id}/close")
 async def close_report(
     report_id: int,
@@ -646,7 +613,6 @@ async def close_report(
     current_user = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Close report (Owner or Officials)"""
     
     report = db.query(models.Report).filter(models.Report.id == report_id).first()
     
@@ -691,7 +657,6 @@ async def delete_report(
     current_user = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Delete report (Owner within 24 hours or Admin)"""
     
     report = db.query(models.Report).filter(models.Report.id == report_id).first()
     
@@ -730,7 +695,6 @@ async def get_report_history(
     current_user = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get status history for a report"""
     
     report = db.query(models.Report).filter(models.Report.id == report_id).first()
     
@@ -750,26 +714,20 @@ async def get_report_history(
 async def get_report_image(
     filename: str,
 ):
-    """Serve report image file"""
     from fastapi.responses import FileResponse
-    
     file_path = os.path.join(REPORT_IMAGES_DIR, filename)
-    
     if not os.path.exists(file_path):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Image not found"
         )
-    
     return FileResponse(file_path)
 
-# 11. GET REPORT STATISTICS (for officials/admin)
 @app.get("/api/reports/stats/summary")
 async def get_report_statistics(
     current_user = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get report statistics"""
     
     if current_user.role == models.UserRole.CITIZEN:
         raise HTTPException(
@@ -807,10 +765,6 @@ async def get_nearby_reports(
     radius_km: float = Query(10, ge=0.1, le=100, description="Search radius in kilometers"),
     db: Session = Depends(get_db)
 ):
-    """
-    PUBLIC ENDPOINT - NO AUTHENTICATION REQUIRED
-    Get nearby reports for map visualization with numeric severity (1-10).
-    """
     try:
         # Haversine formula
         def haversine(lon1, lat1, lon2, lat2):
@@ -818,27 +772,19 @@ async def get_nearby_reports(
             dlon, dlat = lon2 - lon1, lat2 - lat1
             a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
             return 6371 * 2 * asin(sqrt(a))
-        
-        # Priority to severity mapping
         priority_map = {"low": 3, "medium": 5, "high": 7, "critical": 9}
-        
-        # Get all reports
         all_reports = db.query(models.Report).all()
         nearby_reports = []
-        
         for report in all_reports:
             distance = haversine(longitude, latitude, report.longitude, report.latitude)
-            
             if distance <= radius_km:
                 first_image = None
                 if report.images and len(report.images) > 0:
                     first_image = f"/api/reports/images/{report.images[0].filename}"
-                
                 base_severity = priority_map.get(
                     report.priority.value if hasattr(report.priority, 'value') else report.priority,
                     5
                 )
-                
                 nearby_reports.append({
                     "id": report.id,
                     "latitude": float(report.latitude),
@@ -855,47 +801,33 @@ async def get_nearby_reports(
                     "image_url": first_image,
                     "base_severity": base_severity
                 })
-        
-        # Calculate severity with clustering
         def calculate_severity_with_clusters(reports_list):
             result, processed = [], set()
-            
             for i, report in enumerate(reports_list):
                 if i in processed:
                     continue
-                
                 cluster, cluster_indices = [report], {i}
-                
                 for j, other_report in enumerate(reports_list):
                     if j != i and j not in processed:
                         if haversine(report['longitude'], report['latitude'], 
                                     other_report['longitude'], other_report['latitude']) <= 0.5:
                             cluster.append(other_report)
                             cluster_indices.add(j)
-                
                 cluster_size = len(cluster)
                 cluster_bonus = 1 if cluster_size >= 5 else 0.7 if cluster_size >= 3 else 0.3 if cluster_size >= 2 else 0
-                
                 for report_item in cluster:
                     report_item['severity'] = round(min(10, report_item['base_severity'] + cluster_bonus), 1)
                     report_item['cluster_count'] = cluster_size
                     del report_item['base_severity']
                     result.append(report_item)
-                
                 processed.update(cluster_indices)
-            
             return result
-        
         reports_with_severity = calculate_severity_with_clusters(nearby_reports)
-        
-        # Calculate statistics
         status_counts, issue_type_counts = {}, {}
         severity_distribution = {"low": 0, "medium": 0, "high": 0, "critical": 0}
-        
         for report in reports_with_severity:
             status_counts[report['status']] = status_counts.get(report['status'], 0) + 1
             issue_type_counts[report['issue_type']] = issue_type_counts.get(report['issue_type'], 0) + 1
-            
             if report['severity'] >= 8:
                 severity_distribution["critical"] += 1
             elif report['severity'] >= 6:
@@ -904,7 +836,6 @@ async def get_nearby_reports(
                 severity_distribution["medium"] += 1
             else:
                 severity_distribution["low"] += 1
-        
         return {
             "success": True,
             "user_location": {"latitude": latitude, "longitude": longitude},
@@ -917,7 +848,6 @@ async def get_nearby_reports(
                 "by_severity": severity_distribution
             }
         }
-    
     except Exception as e:
         print(f"❌ Error in nearby reports: {str(e)}")
         import traceback
@@ -927,7 +857,6 @@ async def get_nearby_reports(
             detail=f"Error fetching nearby reports: {str(e)}"
         )
 
-    
 @app.get("/api/citizens/dashboard/stats")
 async def get_citizen_dashboard_stats(
     current_user = Depends(auth.get_current_user),

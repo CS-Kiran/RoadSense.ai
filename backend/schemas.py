@@ -98,13 +98,11 @@ class ReportPriorityEnum(str, Enum):
     HIGH = "high"
     CRITICAL = "critical"
 
-# Location Schema
 class LocationSchema(BaseModel):
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
     address: str = Field(..., min_length=5)
 
-# Report Image Response Schema
 class ReportImageResponse(BaseModel):
     id: int
     filename: str
@@ -117,7 +115,6 @@ class ReportImageResponse(BaseModel):
     class Config:
         from_attributes = True
 
-# Report Create Schema
 class ReportCreate(BaseModel):
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
@@ -127,7 +124,6 @@ class ReportCreate(BaseModel):
     description: str = Field(..., min_length=10)
     is_anonymous: bool = False
 
-# Report Response Schema
 class ReportResponse(BaseModel):
     id: int
     user_id: int
@@ -153,7 +149,6 @@ class ReportResponse(BaseModel):
     class Config:
         from_attributes = True
 
-# Report List Response (without images for performance)
 class ReportListResponse(BaseModel):
     id: int
     user_id: int
@@ -170,23 +165,19 @@ class ReportListResponse(BaseModel):
     class Config:
         from_attributes = True
 
-# Report Status Update Schema
 class ReportStatusUpdate(BaseModel):
     status: ReportStatusEnum
     comment: Optional[str] = None
     priority: Optional[ReportPriorityEnum] = None
 
-# Report Assignment Schema
 class ReportAssignment(BaseModel):
     official_id: int
     comment: Optional[str] = None
 
-# Comment Create Schema
 class CommentCreate(BaseModel):
     comment: str = Field(..., min_length=1, max_length=2000)
     is_internal: bool = False
 
-# Comment Response Schema
 class CommentResponse(BaseModel):
     id: int
     report_id: int
@@ -199,7 +190,6 @@ class CommentResponse(BaseModel):
     class Config:
         from_attributes = True
 
-# Status History Response Schema
 class StatusHistoryResponse(BaseModel):
     id: int
     old_status: Optional[str]
